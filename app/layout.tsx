@@ -1,6 +1,6 @@
 import Link from "next/link";
 import "./globals.css";
-import { Inter } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import { GeistSans } from "geist/font/sans";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@/components/analytics";
@@ -48,6 +48,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             </footer>
           </div>
           <Analytics />
+          <SpeedInsights />
         </ThemeProvider>
       </body>
     </html>
