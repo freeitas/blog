@@ -1,12 +1,10 @@
 import Link from "next/link";
 import "./globals.css";
-import { SpeedInsights } from "@vercel/speed-insights/next"
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { GeistSans } from "geist/font/sans";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@/components/analytics";
 import { ModeToggle } from "@/components/mode-toggle";
-
-//const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "Create Next App",
@@ -24,7 +22,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         className={`antialiased min-h-screen text-black bg-white dark:text-white dark:bg-[#111010] ${GeistSans.className}`}
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <div className="max-w-2xl mx-auto py-10 px-4">
+          <div className="max-w-2xl mx-auto py-10 px-4 h-screen">
             <header>
               <div className="flex items-center justify-between">
                 <nav className="text-sm font-medium space-x-6">
@@ -34,18 +32,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
                 <ModeToggle />
               </div>
             </header>
-            <main className="flex flex-1">{children}</main>
-            <footer className="flex justify-center gap-12">
-              <a>
-                <span>email</span>
-              </a>
-              <a href="https://github.com/freeitas">
-                <span>github</span>
-              </a>
-              <a href="https://www.linkedin.com/in/guilhermehfds/">
-                <span>linkedin</span>
-              </a>
-            </footer>
+            <main>{children}</main>
+           
           </div>
           <Analytics />
           <SpeedInsights />
