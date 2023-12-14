@@ -34,7 +34,18 @@ export default function RootLayout({ children }: RootLayoutProps) {
                 <ModeToggle />
               </div>
             </header>
-            <main>{children}</main>
+            <main className="flex flex-1">{children}</main>
+            <footer className="flex justify-center gap-12">
+              <a>
+                <span>email</span>
+              </a>
+              <a href="https://github.com/freeitas">
+                <span>github</span>
+              </a>
+              <a href="https://www.linkedin.com/in/guilhermehfds/">
+                <span>linkedin</span>
+              </a>
+            </footer>
           </div>
           <Analytics />
         </ThemeProvider>
