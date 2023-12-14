@@ -24,11 +24,11 @@ export default function RootLayout({ children }: RootLayoutProps) {
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <div className="max-w-2xl mx-auto py-10 px-4 h-screen">
             <header>
-              <div className="flex items-center justify-between">
-                <nav className="text-sm font-medium space-x-6">
+              <div className="flex items-center justify-end">
+                {/* <nav className="text-sm font-medium space-x-6">
                   <Link href="/">home</Link>
                   <Link href="/about">about</Link>
-                </nav>
+                </nav> */}
                 <ModeToggle />
               </div>
             </header>
