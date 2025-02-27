@@ -1,0 +1,55 @@
+---
+title: Cloud-Native Security
+description: The 4 C's
+date: "2024-02-27"
+---
+
+<Image src="/code-container-cluster-cloud.svg" width="718" height="404" alt="Cloud, Clusters, Containers, and Code" />
+
+> "Cloud Native" refers to an approach to application development and deployment that takes full advantage of the characteristics and benefits of cloud computing. Cloud computing offers on-demand resources, scalability, flexibility, and efficiency, and "Cloud Native" applications are specifically designed to operate in this environment.
+
+ I've been diving deep into cloud-native security lately, and thought I'd share what I'm learning. 
+
+What are the 4 C's?
+The cloud-native security model is often visualized as concentric layers, with each "C" representing a crucial security domain:
+
++ Code - The innermost layer (your applications)
++ Container - The packaging of your code
++ Cluster - The orchestration of your containers
++ Cloud - The infrastructure everything runs on
+
+ each layer builds upon the security of the inner layers, protecting one layer does not
+garantee the previous layer, does not matter if my code its secure if my container is a swiss chesse of breaches
+
+Code
+-
++ Dependency scanning
++ SAST/DAST (Static/Dynamic Application Security Testing)
++ Secrets management
++ Secure coding practices
+
+Container
+-
++ Container image scanning
++ Runtime security
++ Container hardening
++ Base image security
+
+Cluster
+-
++ Network policies
++ Pod security standards
++ RBAC (Role-Based Access Control)
++ Admission controllers
++ Secrets management
+
+Cloud
+-
+
++ IAM (Identity and Access Management)
++ Network security
++ Data encryption
++ Compliance frameworks
++ Infrastructure security
+
+I'll be posting deep dives into each of these layers as I study them.
