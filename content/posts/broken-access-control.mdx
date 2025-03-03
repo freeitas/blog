@@ -1,7 +1,7 @@
 ---
 title: Broken Access Control
 description: Top 10 OWASP
-date: "2024-02-27"
+date: "2025-03-03"
 ---
 
 What?
@@ -26,14 +26,14 @@ class PermissionService {
     // Check user roles against required permissions
     const userRoles = user.roles || [];
     const requiredPermissions = this.getRequiredPermissions(resource, action);
-    
+
     return userRoles.some(role => 
       this.getRolePermissions(role).some(permission => 
         requiredPermissions.includes(permission)
       )
     );
   }
-  
+
   static getRequiredPermissions(resource, action) {
     const permissionMap = {
       'user': {
