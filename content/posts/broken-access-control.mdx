@@ -1,0 +1,96 @@
+---
+title: Broken Access Control
+description: Top 10 OWASP
+date: "2024-02-27"
+---
+
+What?
+-
+[Broken Access Control](https://owasp.org/Top10/A01_2021-Broken_Access_Control/) is a security vulnerability that occurs when an application fails to properly enforce restrictions on what authenticated users can do. This vulnerability allows attackers to access unauthorized functionality or data, which can lead to data theft, data manipulation, or even complete system compromise.
+
+How to Prevent
+-
++ Except for public resources, deny by default.
++ Implement access control mechanisms once and re-use them throughout the application, including minimizing Cross-Origin Resource Sharing (CORS) usage.
++ Model access controls should enforce record ownership rather than accepting that the user can create, read, update, or delete any record.
++ Unique application business limit requirements should be enforced by domain models.
++ Disable web server directory listing and ensure file metadata (e.g., .git) and backup files are not present within web roots.
++ Log access control failures, alert admins when appropriate (e.g., repeated failures).
++ Rate limit API and controller access to minimize the harm from automated attack tooling.
++ Stateful session identifiers should be invalidated on the server after logout. Stateless JWT tokens should rather be short-lived so that the window of opportunity for an attacker is minimized. For longer lived JWTs it's highly recommended to follow the OAuth standards to revoke access.
+
+```js
+// Centralized permission checker
+class PermissionService {
+  static checkPermission(user, resource, action) {
+    // Check user roles against required permissions
+    const userRoles = user.roles || [];
+    const requiredPermissions = this.getRequiredPermissions(resource, action);
+    
+    return userRoles.some(role => 
+      this.getRolePermissions(role).some(permission => 
+        requiredPermissions.includes(permission)
+      )
+    );
+  }
+  
+  static getRequiredPermissions(resource, action) {
+    const permissionMap = {
+      'user': {
+        'create': ['admin'],
+        'read': ['admin', 'user_manager'],
+        'update': ['admin', 'user_manager'],
+        'delete': ['admin']
+      },
+      'document': {
+        'create': ['admin', 'content_creator'],
+        'read': ['admin', 'content_creator', 'viewer'],
+        'update': ['admin', 'content_creator'],
+        'delete': ['admin']
+      }
+    };
+    
+    return permissionMap[resource]?.[action] || [];
+  }
+  
+  static getRolePermissions(role) {
+    // Centralized role definitions
+    const roleMap = {
+      'admin': ['admin'],
+      'user_manager': ['user_manager'],
+      'content_creator': ['content_creator'],
+      'viewer': ['viewer']
+    };
+    
+    return roleMap[role] || [];
+  }
+}
+
+// Reusable middleware using the centralized service
+function requirePermission(resource, action) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).send('Authentication required');
+    }
+    
+    if (!PermissionService.checkPermission(req.user, resource, action)) {
+      return res.status(403).send('Permission denied');
+    }
+    
+    next();
+  };
+}
+
+// Apply the reusable middleware to routes
+app.get('/api/users', 
+  authenticateUser, 
+  requirePermission('user', 'read'), 
+  userController.listUsers
+);
+
+app.post('/api/documents', 
+  authenticateUser, 
+  requirePermission('document', 'create'), 
+  documentController.createDocument
+);
+```
