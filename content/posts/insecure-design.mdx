@@ -1,0 +1,190 @@
+---
+title: Insecure Design
+description: Top 10 OWASP
+date: "2025-03-07"
+---
+
+## What?
+
+[Insecure Design](https://owasp.org/Top10/A04_2021-Insecure_Design/) refers to risks stemming from design and architectural flaws. It calls for more use of threat modeling, secure design patterns, and reference architectures. Unlike implementation flaws, insecure design refers to missing or ineffective control design that fails to protect against important security risks. [OWASP Software Assurance Maturity Model (SAMM)](https://owasp.org/www-project-samm/) provides a framework for building secure software.
+
+## How to Prevent
+
+- Establish and use a secure development lifecycle with security professionals
+- Use threat modeling for critical authentication, access control, business logic, and key flows
+- Integrate security language and controls into user stories
+- Use secure design patterns and architectures
+- Write unit and integration tests to validate security controls
+- Segment network and system components
+- Limit resource consumption by user or service
+- Implement failure states securely
+- Define and implement a security baseline
+
+```js
+// BAD EXAMPLE - Insecure Business Logic Design
+class TransactionService {
+  static async transferMoney(fromAccount, toAccount, amount) {
+    // No validation of account ownership
+    // No transaction atomicity
+    // No rate limiting
+    await Account.update(
+      { balance: fromAccount.balance - amount },
+      { where: { id: fromAccount.id } }
+    );
+    await Account.update(
+      { balance: toAccount.balance + amount },
+      { where: { id: toAccount.id } }
+    );
+  }
+}
+
+// GOOD EXAMPLE - Secure Design Implementation
+class SecureTransactionService {
+  static async transferMoney(userId, fromAccountId, toAccountId, amount) {
+    // Rate limiting check
+    if (await this.isRateLimitExceeded(userId)) {
+      throw new Error("Rate limit exceeded");
+    }
+
+    // Start transaction for atomicity
+    const transaction = await sequelize.transaction();
+
+    try {
+      // Verify account ownership
+      const fromAccount = await Account.findOne({
+        where: { id: fromAccountId, userId },
+        lock: true,
+        transaction,
+      });
+
+      if (!fromAccount) {
+        throw new Error("Source account not found or unauthorized");
+      }
+
+      // Validate sufficient funds
+      if (fromAccount.balance < amount) {
+        throw new Error("Insufficient funds");
+      }
+
+      // Verify destination account exists
+      const toAccount = await Account.findOne({
+        where: { id: toAccountId },
+        lock: true,
+        transaction,
+      });
+
+      if (!toAccount) {
+        throw new Error("Destination account not found");
+      }
+
+      // Perform transfer within transaction
+      await Account.update(
+        { balance: fromAccount.balance - amount },
+        { where: { id: fromAccountId }, transaction }
+      );
+      await Account.update(
+        { balance: toAccount.balance + amount },
+        { where: { id: toAccountId }, transaction }
+      );
+
+      // Log transaction for audit
+      await TransactionLog.create(
+        {
+          fromAccountId,
+          toAccountId,
+          amount,
+          userId,
+          type: "TRANSFER",
+        },
+        { transaction }
+      );
+
+      // Commit transaction
+      await transaction.commit();
+
+      // Notify user
+      await NotificationService.sendTransferConfirmation(userId, {
+        amount,
+        toAccount: toAccount.accountNumber,
+      });
+    } catch (error) {
+      // Rollback on any error
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  static async isRateLimitExceeded(userId) {
+    const LIMIT_WINDOW = 24 * 60 * 60 * 1000; // 24 hours
+    const MAX_TRANSFERS = 10;
+
+    const recentTransfers = await TransactionLog.count({
+      where: {
+        userId,
+        type: "TRANSFER",
+        createdAt: {
+          [Op.gte]: new Date(Date.now() - LIMIT_WINDOW),
+        },
+      },
+    });
+
+    return recentTransfers >= MAX_TRANSFERS;
+  }
+}
+
+// Example of Secure Error Handling Design
+class ErrorHandler {
+  static handle(error, req, res) {
+    // Log error details securely
+    Logger.error({
+      error: error.message,
+      stack: error.stack,
+      requestId: req.id,
+      userId: req.user?.id,
+    });
+
+    // Don't expose internal errors to client
+    if (error instanceof BusinessError) {
+      // Safe to expose business logic errors
+      return res.status(400).json({
+        error: error.message,
+        code: error.code,
+      });
+    } else {
+      // Generic error for all other cases
+      return res.status(500).json({
+        error: "An unexpected error occurred",
+        requestId: req.id,
+      });
+    }
+  }
+}
+
+// API endpoint with secure design patterns
+app.post("/api/transfers", authenticate, async (req, res) => {
+  try {
+    const { fromAccountId, toAccountId, amount } = req.body;
+
+    // Input validation
+    if (!fromAccountId || !toAccountId || !amount) {
+      throw new BusinessError("Missing required fields");
+    }
+
+    if (amount <= 0) {
+      throw new BusinessError("Invalid transfer amount");
+    }
+
+    // Perform transfer with secure design
+    await SecureTransactionService.transferMoney(
+      req.user.id,
+      fromAccountId,
+      toAccountId,
+      amount
+    );
+
+    res.json({ message: "Transfer completed successfully" });
+  } catch (error) {
+    ErrorHandler.handle(error, req, res);
+  }
+});
+```
