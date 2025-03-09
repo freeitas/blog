@@ -1,14 +1,22 @@
 ---
 title: Trivy
-description: SAST tool
+description: SCA tool
 date: "2025-03-09"
 ---
+
+>Software Configuration Analysis (SCA) is an application security technique that enables developers to track and analyze the open source components introduced into a shared project. SCA solutions scan dependencies to identify security vulnerabilities. - [aquacsec](https://www.aquasec.com/cloud-native-academy/supply-chain-security/sast-security/)
 
 [Trivy](https://github.com/aquasecurity/trivy) comprehensive vulnerability scanner for code repositories, binary artifacts, container images, Kubernetes clusters, and more.
 
 You can run it locally in your project using the CLI and get a report. It will scan the code and identify libraries that have vulnerabilities, their severity, and whether fixes are available.
 
-but we can do better, we can add it to the CI pipeline to scan the code and fail the build if any vulnerabilities are found.
+But we can do better, we can add it to the CI pipeline to scan the code and fail the build if any vulnerabilities are found.
+
+We will run it with the fs scan type, which will scan the files in the project, and find 
+- Vulnerabilities
+- Misconfigurations
+- Secrets
+- Licenses
 
 ```yml
 name: trivy
@@ -53,9 +61,9 @@ jobs:
 
 We can improve the scanning by using specific flags:
 
---ignore-unfixed: will show only  vulnerabities with status fixed and when we can do something about it, so we dont get a verbose log and alerts anf create unecessery friction
+--ignore-unfixed: will show only  vulnerabities with status fixed and when we can do something about it, so we dont get a verbose log and alerts anf create unecessery friction.
 
---severity HIGH,CRITICAL: will only show vulnerabilities with severity HIGH or CRITICAL
+--severity HIGH,CRITICAL: will only show vulnerabilities with severity HIGH or CRITICAL.
 
 For better visibility of vulnerabilities and their impact on the project, we can use this small project [trivy-pr-report](https://github.com/domstolene/trivy-pr-report) that adds a Trivy report as a comment directly to the pull request. But we need to Allow GitHub Actions to create and approve pull requests in settings for this to work.
 
