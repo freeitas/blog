@@ -1,0 +1,64 @@
+---
+title: Trivy
+description: SAST tool
+date: "2025-03-09"
+---
+
+[Trivy](https://github.com/aquasecurity/trivy) comprehensive vulnerability scanner for code repositories, binary artifacts, container images, Kubernetes clusters, and more.
+
+You can run it locally in your project using the CLI and get a report. It will scan the code and identify libraries that have vulnerabilities, their severity, and whether fixes are available.
+
+but we can do better, we can add it to the CI pipeline to scan the code and fail the build if any vulnerabilities are found.
+
+```yml
+name: trivy
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    permissions:
+      contents: read 
+      security-events: write
+      actions: read 
+    name: Build
+    runs-on: "ubuntu-20.04"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'template'
+          template: '@/contrib/sarif.tpl'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+```
+
+<Image src="/trivy-scan.png" width="718" height="404" alt="trivy report on ci pipeline" />
+
+We can improve the scanning by using specific flags:
+
+--ignore-unfixed: will show only  vulnerabities with status fixed and when we can do something about it, so we dont get a verbose log and alerts anf create unecessery friction
+
+--severity HIGH,CRITICAL: will only show vulnerabilities with severity HIGH or CRITICAL
+
+For better visibility of vulnerabilities and their impact on the project, we can use this small project [trivy-pr-report](https://github.com/domstolene/trivy-pr-report) that adds a Trivy report as a comment directly to the pull request. But we need to Allow GitHub Actions to create and approve pull requests in settings for this to work.
+
+<Image src="/trivy-pr.png" width="718" height="404" alt="trivy report on ci pipeline" />
+
+repo: https://github.com/freeitas/trivy
