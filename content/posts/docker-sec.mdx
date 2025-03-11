@@ -1,0 +1,106 @@
+---
+title: Docker Security
+description: hardening
+date: "2025-03-09"
+---
+
+Keep Host and Docker up to date
+--
+Why?
+- protect against known container escape vulnerabilities, this is due to the fact that containers share the host's kernel. If the host's kernel is vulnerable, the containers are also vulnerable.
+
+Set a user
+--
+Why?
+- prevent privilege escalation
+
+How?
+```bash
+docker run --user=1000:1000 alpine
+```
+
+Limit capabilities
+--
+The most secure setup is to drop all capabilities --cap-drop all and then add only required ones.
+```bash
+docker run --cap-drop all --cap-add CHOWN alpine
+```
+
+Prevent in-container privilege escalation
+--
+Always run your docker images with --security-opt=no-new-privileges in order to prevent privilege escalation.
+```bash
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+    - name: example
+      image: gcr.io/google-samples/node-hello:1.0
+      securityContext:
+        allowPrivilegeEscalation: false
+```
+
+Inter-Container Connectivity
+--
+Enabled by default, allowing all containers to communicate with each other through the docker0 bridged network. Consider defining specific network configurations.
+
+Limit resources
+--
+Why?
+- to prevent DoS attacks
+
+How?
+```bash
+docker run --memory="100m" ubuntu sleep infinity
+
+--memory=<memory size>
+--restart=on-failure:<number_of_restarts>
+--memory-swap <value>
+--cpus=<number>
+--ulimit nofile=<number> -- how many file descriptor
+--ulimit nproc=<number> -- max num of processes
+```
+
+Set filesystem and volumes to read-only
+--
+Why?
+- Prevents unauthorized modifications
+- Reduces attack surface
+- Enforces immutability
+
+How?
+```bash
+docker run --read-only alpine sh -c 'echo "v1" > /tmp'
+docker run --read-only --tmpfs /tmp alpine sh -c 'echo "v1" > /tmp/file'
+```
+
+Integrate container scanning tools into your CI/CD pipeline
+--
+Why?
+- to detect vulnerabilities and misconfigurations
+
+How?
+- use tools like Trivy
+
+Run Docker in rootless mode
+--
+Evaluate the specific requirements and security posture of your environment to determine if rootless mode is the best choice for you
+
+Why?
+- to prevent privilege escalation
+
+How?
+- [Docker docs](https://docs.docker.com/engine/security/rootless/)
+
+Docker Secrets for Sensitive Data Management
+--
+Why?
+- to manage sensitive data securely
+
+How?
+```bash
+  docker secret create my_secret my_secret_file
+  docker service create --secret source=my_secret,target=/app/secret alpine sh -c 'cat /app/secret'
+```
