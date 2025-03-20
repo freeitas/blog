@@ -4,34 +4,37 @@ description: Containers
 date: "2025-03-17"
 ---
 
-What is a container?
----
+## What is a container?
 
-Um container é uma unidade padronizada de software que empacota o código e todas as suas dependências
-para que um software seja executado de forma rápida e consistente em qualquer ambiente.
+A container is a standardized unit of software that packages code and all its dependencies so that software can run quickly and consistently in any environment.
 
-caracteristicas:
-- imutabilidade
-- isolamento de processos e recursos computacionais
-- leve, é executado como um processo no sistema operacional
+characteristics:
+
+- immutability
+- isolation of processes and computing resources
+- lightweight, runs as a process on the operating system
 
 container vs virtual machine:
+Virtual Machines (VMs):
+Each VM runs a complete operating system, including the kernel, and uses a hypervisor to manage multiple VMs on the same hardware. This results in higher resource consumption, longer startup times, and less efficiency in terms of memory and CPU usage.
+Containers:
+Share the host operating system's kernel, isolating only the application and its dependencies. This makes them significantly lighter, allowing for more efficient use of resources and almost instantaneous startup. Containers are ideal for scenarios that require rapid scalability and high density of applications on a single host.
 
+<Image
+  src="/vmxdocker.png"
+  width="718"
+  height="404"
+  alt="Container vs Docker"
+/>
 
-Namespaces and isolation of resources
----
+## Namespaces and isolation of resources
 
-Cgroups and control of resources
----
+## Cgroups and control of resources
 
-LXC - Linux Containers
----
+## LXC - Linux Containers
 
-Open Container Initiative (OCI)
----
+## Open Container Initiative (OCI)
 
-Containerd e runc
----
+## Containerd and runc
 
-Filesystem - tmpfs, proc, sysfs, mqueue, debugfs, cgroups
----
+## Filesystem - tmpfs, proc, sysfs, mqueue, debugfs, cgroups
