@@ -15,10 +15,8 @@ characteristics:
 - lightweight, runs as a process on the operating system
 
 container vs virtual machine:
-Virtual Machines (VMs):
-Each VM runs a complete operating system, including the kernel, and uses a hypervisor to manage multiple VMs on the same hardware. This results in higher resource consumption, longer startup times, and less efficiency in terms of memory and CPU usage.
-Containers:
-Share the host operating system's kernel, isolating only the application and its dependencies. This makes them significantly lighter, allowing for more efficient use of resources and almost instantaneous startup. Containers are ideal for scenarios that require rapid scalability and high density of applications on a single host.
++ Virtual Machines (VMs): Each VM runs a complete operating system, including the kernel, and uses a hypervisor to manage multiple VMs on the same hardware. This results in higher resource consumption, longer startup times, and less efficiency in terms of memory and CPU usage.
++ Containers: Share the host operating system's kernel, isolating only the application and its dependencies. This makes them significantly lighter, allowing for more efficient use of resources and almost instantaneous startup. Containers are ideal for scenarios that require rapid scalability and high density of applications on a single host.
 
 <Image
   src="/vmxdocker.png"
@@ -29,7 +27,31 @@ Share the host operating system's kernel, isolating only the application and its
 
 ## Namespaces and isolation of resources
 
+Namespaces are used so that a container can be executed safely. We need mechanisms to ensure the isolation of resources and processes.
+
+Main technology behind containers to achieve isolation:
++ PID (Process ID): Process isolation.
++ NET (Network): Isolation of network interfaces and stack.
++ MNT (Mount): File system isolation.
++ UTS (Unix Timesharing System): Hostname isolation.
++ IPC (Inter-Process Communication): Isolation of communication between processes.
++ USER: User identity isolation.
+
 ## Cgroups and control of resources
+
+cgroups (Control Groups)
+A Linux Kernel feature that allows limiting, monitoring, and isolating resource usage of processes
++ CPU
++ Memory
++ Disk
++ Network
+
+<Image
+  src="/cgroup.png"
+  width="718"
+  height="404"
+  alt="Cgroups and Namespaces"
+/>
 
 ## LXC - Linux Containers
 
