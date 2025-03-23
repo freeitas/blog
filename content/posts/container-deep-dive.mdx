@@ -15,8 +15,9 @@ characteristics:
 - lightweight, runs as a process on the operating system
 
 container vs virtual machine:
-+ Virtual Machines (VMs): Each VM runs a complete operating system, including the kernel, and uses a hypervisor to manage multiple VMs on the same hardware. This results in higher resource consumption, longer startup times, and less efficiency in terms of memory and CPU usage.
-+ Containers: Share the host operating system's kernel, isolating only the application and its dependencies. This makes them significantly lighter, allowing for more efficient use of resources and almost instantaneous startup. Containers are ideal for scenarios that require rapid scalability and high density of applications on a single host.
+
+- Virtual Machines (VMs): Each VM runs a complete operating system, including the kernel, and uses a hypervisor to manage multiple VMs on the same hardware. This results in higher resource consumption, longer startup times, and less efficiency in terms of memory and CPU usage.
+- Containers: Share the host operating system's kernel, isolating only the application and its dependencies. This makes them significantly lighter, allowing for more efficient use of resources and almost instantaneous startup. Containers are ideal for scenarios that require rapid scalability and high density of applications on a single host.
 
 <Image
   src="/vmxdocker.png"
@@ -30,21 +31,23 @@ container vs virtual machine:
 Namespaces are used so that a container can be executed safely. We need mechanisms to ensure the isolation of resources and processes.
 
 Main technology behind containers to achieve isolation:
-+ PID (Process ID): Process isolation.
-+ NET (Network): Isolation of network interfaces and stack.
-+ MNT (Mount): File system isolation.
-+ UTS (Unix Timesharing System): Hostname isolation.
-+ IPC (Inter-Process Communication): Isolation of communication between processes.
-+ USER: User identity isolation.
+
+- PID (Process ID): Process isolation.
+- NET (Network): Isolation of network interfaces and stack.
+- MNT (Mount): File system isolation.
+- UTS (Unix Timesharing System): Hostname isolation.
+- IPC (Inter-Process Communication): Isolation of communication between processes.
+- USER: User identity isolation.
 
 ## Cgroups and control of resources
 
 cgroups (Control Groups)
 A Linux Kernel feature that allows limiting, monitoring, and isolating resource usage of processes
-+ CPU
-+ Memory
-+ Disk
-+ Network
+
+- CPU
+- Memory
+- Disk
+- Network
 
 <Image
   src="/cgroup.png"
@@ -54,6 +57,32 @@ A Linux Kernel feature that allows limiting, monitoring, and isolating resource 
 />
 
 ## LXC - Linux Containers
+
+System responsible for executing and managing containers, creating an isolated environment so that applications can be executed consistently and efficiently.
+
+- Isolation
+- Resource management
+- Network management and communication between containers
+- Storage: volume management and file systems (Overlay)
+- Monitoring, metrics, logs, and container state
+- Does not have a friendly user interface by default
+- Requires greater knowledge of Linux administration
+
+most well known:
+
+- LXC - Linux Containers
+- Docker
+- rkt (Rocket)
+- CRI-O
+- Podman
+
+LXC (Linux Containers) - 2008
+
+- First container system that offered a lightweight virtualization environment using cgroups and namespaces of Linux.
+- Is considered low level compared to solutions like Docker, which offer more abstraction and ease of use
+- Uses Linux tools
+- Does not have a friendly user interface by default
+- Requires more knowledge of Linux administration
 
 ## Open Container Initiative (OCI)
 
