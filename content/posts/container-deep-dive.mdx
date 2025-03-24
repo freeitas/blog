@@ -86,6 +86,15 @@ LXC (Linux Containers) - 2008
 
 ## Open Container Initiative (OCI)
 
+Open Container Initiative (OCI):
+The Open Container Initiative (OCI) is an open and lightweight governance structure, created under the Linux Foundation, with the purpose of establishing open industry standards for container formats and runtimes. The OCI was launched on June 22, 2015, by Docker, CoreOS, and other container industry leaders.
+
+Currently, the OCI contains three main specifications:
+
++ Runtime Specification (runtime-spec): Defines how to execute a "filesystem bundle" that is unpacked on disk. It establishes how the environment should be configured for the container to be started, including requirements such as cgroups, namespaces, device configurations, and permissions.
++ Image Specification (image-spec): Defines how to create an OCI image, which includes the image manifest, filesystem serialization (layers), and image configurations. The image manifest contains metadata about the content and dependencies of the image, while the configuration includes information such as execution commands, environment variables, and other configurations needed to start the container.
++ Distribution Specification (distribution-spec): Introduced in 2020, standardizes the API for container image distribution. This specification is designed to be generic enough to be used as a distribution mechanism for any type of content, allowing container images to be easily stored and retrieved from registries, such as Docker Hub.
+
 ## Containerd and runc
 
 ## Filesystem - tmpfs, proc, sysfs, mqueue, debugfs, cgroups
