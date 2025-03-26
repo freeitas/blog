@@ -91,10 +91,63 @@ The Open Container Initiative (OCI) is an open and lightweight governance struct
 
 Currently, the OCI contains three main specifications:
 
-+ Runtime Specification (runtime-spec): Defines how to execute a "filesystem bundle" that is unpacked on disk. It establishes how the environment should be configured for the container to be started, including requirements such as cgroups, namespaces, device configurations, and permissions.
-+ Image Specification (image-spec): Defines how to create an OCI image, which includes the image manifest, filesystem serialization (layers), and image configurations. The image manifest contains metadata about the content and dependencies of the image, while the configuration includes information such as execution commands, environment variables, and other configurations needed to start the container.
-+ Distribution Specification (distribution-spec): Introduced in 2020, standardizes the API for container image distribution. This specification is designed to be generic enough to be used as a distribution mechanism for any type of content, allowing container images to be easily stored and retrieved from registries, such as Docker Hub.
+- Runtime Specification (runtime-spec): Defines how to execute a "filesystem bundle" that is unpacked on disk. It establishes how the environment should be configured for the container to be started, including requirements such as cgroups, namespaces, device configurations, and permissions.
+- Image Specification (image-spec): Defines how to create an OCI image, which includes the image manifest, filesystem serialization (layers), and image configurations. The image manifest contains metadata about the content and dependencies of the image, while the configuration includes information such as execution commands, environment variables, and other configurations needed to start the container.
+- Distribution Specification (distribution-spec): Introduced in 2020, standardizes the API for container image distribution. This specification is designed to be generic enough to be used as a distribution mechanism for any type of content, allowing container images to be easily stored and retrieved from registries, such as Docker Hub.
 
 ## Containerd and runc
+
+- containerd is a lower-level container runtime that manages the container lifecycle, including execution, pausing, stopping, and removing containers. It is a separate project, originally part of Docker, but now an independent component maintained by the Cloud Native Computing Foundation (CNCF).
+  - Relationship between Docker and containerd: Docker uses containerd as one of its fundamental components to efficiently manage containers. Docker's architecture is built on containerd, which in turn uses runc (OCI-compatible) to create and run containers at the system level. Docker CLI and Docker Daemon communicate with containerd to perform high-level operations, such as creating new containers or executing commands in them.
+  - Benefits of containerd: Separating containerd as an independent project brought greater modularity and flexibility to the container ecosystem. Other tools and orchestrators, such as Kubernetes, also use containerd as the standard runtime due to its efficiency and adherence to OCI standards.
+
+The main components of containerd include:
+
+- Main Daemon: The central service that coordinates all container-related operations, functioning as a gRPC server to manage the container lifecycle (GitHub).
+
+- Client: An interface that allows users to interact with the containerd daemon, sending commands and receiving responses for operations such as creating, running, and managing containers (GitHub).
+
+- Image Storage: Manages the download, storage, and distribution of container images, ensuring that the necessary images are available for container execution (containerd).
+
+- Container Execution: Responsible for starting and supervising the execution of containers, ensuring they operate as expected (containerd).
+
+- Network Primitives: Provides functionality for creating, modifying, and deleting network interfaces, allowing containers to connect to networks as needed (containerd).
+
+- CRI Plugin (Container Runtime Interface): Implements the container runtime interface for Kubernetes, allowing containerd to be used as a runtime in Kubernetes environments (GitHub).
+
+### How containerd and runc work together
+
+- containerd and runc work together to create and manage containers in Docker and other containerization systems that follow the OCI standard.
+- When you run a command like docker run, the Docker CLI communicates with the Docker Daemon to request the creation of a new container.
+- The Docker Daemon then communicates with containerd to manage the container lifecycle.
+- containerd uses runc to effectively create the container, applying all isolation configurations, such as namespaces and cgroups.
+- runc creates the isolated process and configures namespaces and cgroups as defined by OCI specifications. It executes the initial process inside the container (for example, /bin/sh or any specified command).
+- Once the container is running, containerd continues to monitor its state and allows commands such as pause, resume, and stop to be executed through the gRPC API.
+
+### Difference between containerd and Docker Daemon
+
+Docker Daemon: The Docker Daemon (dockerd) is the main process that coordinates all Docker-related operations. It receives commands from the Docker CLI, interacts with containerd, and manages images, containers, networks, and volumes. The Docker Daemon is responsible for providing the high-level interface for developers and operators who use Docker to manage containers easily.
+
+containerd: containerd is a lower-level container runtime that handles the container lifecycle, including execution, pausing, restarting, and removing containers. containerd was created to be a modular and independent tool that can be used by other container orchestrators such as Kubernetes. It is responsible for communicating directly with runc for container creation, while the Docker Daemon is more focused on providing a high-level interface and management functionality.
+
+Relationship between containerd and Docker Daemon: The Docker Daemon is built on top of containerd. When you run a Docker command, the Docker Daemon delegates container-related operations to containerd, which in turn uses runc to effectively create and run the container. Thus, the Docker Daemon serves as an orchestration and abstraction layer, while containerd performs lower-level operations.
+
+### About runC
+
+runc is the low-level container runtime that follows the Open Container Initiative (OCI) specifications, ensuring that any container created with runc complies with the standards defined for portability and interoperability between container tools.
+
+Function of runc: runc is responsible for creating and executing containers at the lowest level of the system. It uses Linux kernel features, such as namespaces and cgroups, to create an isolated and controlled environment where a container runs. runc is responsible for applying isolation configurations, setting resource limits, and starting the main process inside the container.
+
+How runc Works: When the command to create a container is passed by containerd, runc reads the generated configuration file, which defines details such as namespaces, cgroups, devices, environment variables, among others. From this configuration, runc creates an isolated process that will be the container. runc does not manage the container lifecycle after its creation, as this is containerd's function.
+
+OCI and runc: By being compatible with OCI specifications, runc ensures that the container format and execution practices are standardized, which means that containers created with runc are portable and can be run in other OCI-compatible environments.
+
+History of runc: Originally, runc was an integral part of Docker, but with the creation of OCI, it was extracted and transformed into an independent project to serve as a universal container runtime. This helped promote a more open and interoperable ecosystem, where multiple tools can share the same runtime.
+
+Operation:
+
+- If you have containerd and runc installed, it's possible to create a container directly without using Docker. First, you must prepare a configuration for the container using a JSON file following OCI specifications.
+
+- Then, runc can be used to initialize the container with this configuration file. This process demonstrates how runc acts as the direct executor of the container, while containerd or Docker provide the abstraction layer to facilitate management.
 
 ## Filesystem - tmpfs, proc, sysfs, mqueue, debugfs, cgroups
