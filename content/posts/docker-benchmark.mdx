@@ -1,0 +1,67 @@
+---
+title: Docker Benchmark
+description: docker hardening
+date: "2025-04-01"
+---
+
+## What are Docker Security Benchmarks?
+
+Docker security benchmarks are standardized guidelines and best practices for securing Docker containers and their environments. These benchmarks help organizations assess and improve the security posture of their Docker deployments.
+
+## CIS Docker Benchmark
+
+The Center for Internet Security (CIS) Docker Benchmark provides prescriptive guidance for establishing a secure configuration posture for Docker containers.
+
+[CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker)
+
+Key areas covered:
+
+- Host configuration
+- Docker daemon configuration
+- Docker daemon configuration files
+- Container images and build files
+- Container runtime
+- Docker security operations
+- Docker Swarm configuration
+
+## Docker Bench Security
+
+Docker Bench Security is an automated script that checks for dozens of common best practices around deploying Docker containers in production.
+
+[Docker Bench Security (Official)](https://github.com/docker/docker-bench-security)
+
+Features:
+
+- Checks for all the automatable tests in the CIS Docker Benchmark
+- Easy to use and integrate into CI/CD pipelines
+- Maintained by Docker, Inc.
+
+## Aqua Security Docker Bench
+
+Aqua Security provides an alternative implementation of the Docker Bench Security tool with additional features.
+
+[Aqua Security Docker Bench](https://github.com/aquasecurity/docker-bench)
+
+Additional features:
+
+- Enhanced reporting capabilities
+- Integration with Aqua Security's commercial products
+- Regular updates to match the latest security best practices
+
+## Running Docker Bench Security
+
+```bash
+# Clone the repository
+git clone https://github.com/docker/docker-bench-security.git
+
+# Run the script
+cd docker-bench-security
+sudo sh docker-bench-security.sh
+```
+
+The tool will output a report showing:
+
+- PASS: Tests that passed
+- WARN: Potential security concerns
+- INFO: Informational findings
+- NOTE: Suggestions for improvement
