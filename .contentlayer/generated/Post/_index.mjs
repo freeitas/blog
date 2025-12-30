@@ -8,7 +8,8 @@ import posts__dockerBenchmarkMdx from './posts__docker-benchmark.mdx.json' asser
 import posts__dockerSecMdx from './posts__docker-sec.mdx.json' assert { type: 'json' }
 import posts__injectionMdx from './posts__injection.mdx.json' assert { type: 'json' }
 import posts__insecureDesignMdx from './posts__insecure-design.mdx.json' assert { type: 'json' }
+import posts__internetProtocolMdx from './posts__internet-protocol.mdx.json' assert { type: 'json' }
 import posts__osiModelMdx from './posts__osi-model.mdx.json' assert { type: 'json' }
 import posts__trivyMdx from './posts__trivy.mdx.json' assert { type: 'json' }
 
-export const allPosts = [posts__brokenAccessControlMdx, posts__cloudNativeMdx, posts__containerDeepDiveMdx, posts__cryptographicFailuresMdx, posts__dockerBenchmarkMdx, posts__dockerSecMdx, posts__injectionMdx, posts__insecureDesignMdx, posts__osiModelMdx, posts__trivyMdx]
+export const allPosts = [posts__brokenAccessControlMdx, posts__cloudNativeMdx, posts__containerDeepDiveMdx, posts__cryptographicFailuresMdx, posts__dockerBenchmarkMdx, posts__dockerSecMdx, posts__injectionMdx, posts__insecureDesignMdx, posts__internetProtocolMdx, posts__osiModelMdx, posts__trivyMdx]
