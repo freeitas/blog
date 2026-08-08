@@ -50,12 +50,19 @@ html.dark [data-rehype-pretty-code-figure] code[data-theme*=" "] span {
   background-color: transparent;
 }
 
-/* 2. Inline highlighted code (`docker ps{:bash}`) is wrapped in a span, not a
-      figure, and would otherwise inherit the full block background. */
+/* 2. Inline highlighted code is wrapped in a span, not a figure, and would
+      otherwise inherit the full block background.
+      It gets a faint tint rather than a transparent background: the horizontal
+      padding is needed for legibility, but with no background it just reads as
+      a gap before the following punctuation. */
 span[data-rehype-pretty-code-figure] > code[data-theme*=" "] {
-  background-color: transparent !important;
+  background-color: rgb(0 0 0 / 0.06) !important;
   padding: 0.15em 0.35em;
   border-radius: 0.25rem;
+}
+
+html.dark span[data-rehype-pretty-code-figure] > code[data-theme*=" "] {
+  background-color: rgb(255 255 255 / 0.1) !important;
 }
 
 /* 3. prose renders literal backticks around inline <code> via content: "`". */
