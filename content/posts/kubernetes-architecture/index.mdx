@@ -1,0 +1,657 @@
+---
+title: Kubernetes Architecture
+description: The control plane, the worker nodes, and what every component actually does
+date: "2026-08-08"
+tags: ["kubernetes", "containers", "cloud", "devops"]
+---
+
+Everything below targets **Kubernetes v1.36**, the current stable release. Almost
+every default in this post is version sensitive, so the version matters more than
+it usually would.
+
+## What a cluster is
+
+The official definition is short:
+
+> A Kubernetes cluster consists of a control plane plus a set of worker machines,
+> called nodes, that run containerized applications. Every cluster needs at least
+> one worker node in order to run Pods.
+
+That last sentence is the only hard architectural minimum the docs state. There is
+**no documented minimum number of control plane nodes**. In production the control
+plane usually runs across several machines and the cluster runs many nodes, for
+fault tolerance, but that is guidance rather than a requirement.
+
+On terminology: the current docs say **control plane** and **control plane node**.
+The glossary defines `master` as a "legacy term, used as synonym for nodes running
+the control plane", and notes that in early versions nodes were called "minions".
+Both are worth recognising in old blog posts and neither is current.
+
+Node roles are just labels of the form `node-role.kubernetes.io/<role>`. Kubernetes
+ignores the label value entirely, so a node is not "a worker" because of a label.
+It is a worker because a kubelet registered it and Pods can be scheduled there.
+
+## The control plane and node split
+
+The control plane makes the global decisions:
+
+> The control plane's components make global decisions about the cluster (for
+> example, scheduling), as well as detecting and responding to cluster events (for
+> example, starting up a new pod when a Deployment's `replicas` field is
+> unsatisfied).
+
+A detail people get wrong constantly: the control plane does **not** have to live
+on dedicated machines. The docs say control plane components can run on any machine
+in the cluster, and that setup scripts colocate them and keep user workloads off
+those machines only for simplicity. It is a convention, not a rule.
+
+There are four documented deployment models:
+
+| Model | How the components run |
+|---|---|
+| Traditional | Directly on dedicated machines or VMs, often as systemd services |
+| Static Pods | As static Pods managed by the kubelet, which is what kubeadm does |
+| Self hosted | As Pods inside the cluster, managed by Deployments and StatefulSets |
+| Managed | The provider runs and abstracts the control plane for you |
+
+## Reconciliation, the idea underneath everything
+
+Before the component tour, this is the concept that makes the rest make sense.
+
+> In Kubernetes, controllers are control loops that watch the state of your
+> cluster, then make or request changes where needed. Each controller tries to
+> move the current cluster state closer to the desired state.
+
+The docs use a thermostat analogy: setting the temperature declares desired state,
+the room temperature is current state, and the thermostat acts to close the gap.
+
+A controller tracks at least one resource type. Those objects have a `spec` field
+representing desired state, and the controller is responsible for making current
+state approach it. Crucially, controllers usually act **indirectly**: rather than
+performing the action themselves, they send messages to the API server that have
+useful side effects.
+
+The consequence is worth stating plainly, because it explains the whole shape of
+the system: **nothing pushes commands around the cluster**. Every component watches
+the API server and reconciles. That is why the architecture is a hub and spoke
+rather than a chain of command.
+
+## Control plane components
+
+Five of them. Only four are always present, since `cloud-controller-manager` is
+marked optional.
+
+### kube-apiserver
+
+The front end. Everything else talks through it.
+
+> The core of Kubernetes' control plane is the API server and the HTTP API that it
+> exposes. Users, the different parts of your cluster, and external components all
+> communicate with one another through the API server.
+
+It validates and configures data for API objects, serves REST operations, and
+provides the frontend to the cluster's shared state.
+
+The scaling model is the interesting part, and it differs from its siblings:
+
+> kube-apiserver is designed to scale horizontally, that is, it scales by deploying
+> more instances. You can run several instances of kube-apiserver and balance
+> traffic between those instances.
+
+That is genuine **active/active**. The scheduler and controller manager instead run
+replicas with leader election, which is **active/passive**. Worth internalising: adding
+API server replicas adds capacity, while adding scheduler replicas only adds
+failover.
+
+Defaults: `--secure-port` is **6443**, `--bind-address` is `0.0.0.0`, `--etcd-prefix`
+is `/registry`. The old `--insecure-port` and `--insecure-bind-address` no longer
+exist. The in-tree cloud provider flags `--cloud-provider` and `--cloud-config` were
+removed from kube-apiserver in **v1.33**.
+
+### etcd
+
+> Consistent and highly-available key value store used as Kubernetes' backing store
+> for all cluster data.
+
+The docs follow that sentence immediately with a warning to have a backup plan, which
+tells you how much rides on it. etcd is written in Go and uses the **Raft** consensus
+algorithm. Kubernetes stores the serialized state of every object in it, under the
+`--etcd-prefix` key namespace.
+
+Ports are **2379** for clients and **2380** for peers.
+
+Quorum for a cluster of n members is `(n/2)+1`, which produces a fault tolerance
+table worth memorising:
+
+| Members | Majority | Failures tolerated |
+|---|---|---|
+| 1 | 1 | 0 |
+| 3 | 2 | 1 |
+| 4 | 3 | 1 |
+| 5 | 3 | 2 |
+| 6 | 4 | 2 |
+| 7 | 4 | 3 |
+
+Note that 3 and 4 both tolerate one failure, and 5 and 6 both tolerate two. **Even
+member counts buy cost, not resilience.** Hence the guidance to run an odd number.
+
+On sizing, two numbers get conflated constantly. The etcd task page says "a
+five-member cluster is recommended in production". kubeadm's HA guide says the
+**minimum** is three control plane nodes. Both are right at different altitudes:
+three is the HA floor, five is the production recommendation. The docs also warn
+against scaling etcd up and down as the cluster grows, and put a practical ceiling
+around seven members, since every write replicates to every member.
+
+etcd is leader based and extremely sensitive to disk and network latency:
+
+> Performance and stability of the cluster is sensitive to network and disk I/O.
+> Any resource starvation can lead to heartbeat timeout, causing instability of the
+> cluster. An unstable etcd indicates that no leader is elected. Under such
+> circumstances, a cluster cannot make any changes to its current state, which
+> implies no new pods can be scheduled.
+
+etcd.io asks for **50 sequential IOPS minimum**, and 500 for heavy load. The default
+backend quota is **2 GiB**, with 8 GiB as the suggested maximum. Exceeding it raises
+a NOSPACE alarm, and recovery is compact, defragment, then `etcdctl alarm disarm`.
+
+Security matters here more than anywhere else in the cluster:
+
+> Access to etcd is equivalent to root permission in the cluster so ideally only the
+> API server should have access to it.
+
+Note the phrasing. That is a recommendation, not an enforced invariant. The
+mechanical reality is that kube-apiserver is the only core component with etcd
+connection flags at all: the scheduler and controller manager have none. So the
+accurate claim is "the only core Kubernetes component that reads from and writes to
+etcd", not "the only thing that can".
+
+Secrets are stored **unencrypted by default**. Base64 is not encryption. Enabling
+encryption at rest helps, but read the caveat carefully:
+
+> Anyone with API access or read access to etcd can retrieve the encryption key and
+> decrypt all data.
+
+With a local key file, mounted into the API server static Pod, encryption at rest
+does not protect you against a compromised control plane host. Only **KMS v1 or v2**
+moves the key material off the node.
+
+Backup and restore use two different tools, which trips people up:
+
+```bash
+# Backup: etcdctl, against a live member, over the network
+ETCDCTL_API=3 etcdctl \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key \
+  snapshot save /backup/etcd-snapshot.db
+
+# Restore: etcdutl, offline, into a FRESH data directory
+etcdutl snapshot restore /backup/etcd-snapshot.db --data-dir=/var/lib/etcd
+```
+
+And the rule that saves outages:
+
+> If any API servers are running in your cluster, you should not attempt to restore
+> instances of etcd.
+
+### kube-scheduler
+
+> Control plane component that watches for newly created Pods with no assigned node,
+> and selects a node for them to run on.
+
+The factors it weighs, verbatim and in order: individual and collective resource
+requirements, hardware/software/policy constraints, affinity and anti-affinity
+specifications, data locality, inter-workload interference, and deadlines.
+
+Taints and tolerations are conspicuously absent from that list. They are real, but
+implemented as the `TaintToleration` filter plugin, which lives under "policy
+constraints". Worth being precise about if you are quoting the docs.
+
+Scheduling runs in two steps:
+
+1. **Filtering** finds the set of nodes where it is feasible to schedule the Pod. Nodes that pass are called *feasible nodes*. If the list is empty, the Pod is not schedulable yet.
+2. **Scoring** ranks the survivors by the active scoring rules, and the scheduler binds the Pod to the highest ranked node.
+
+The scheduler is replaceable. It is the reference implementation, multiple
+schedulers can run in one cluster, and you can write your own. Extension happens
+through **Scheduling Profiles**, with plugins at stages including QueueSort, Filter,
+Score, Reserve, Permit, PreBind and Bind. The older Scheduling Policies mechanism has
+been unsupported since v1.23.
+
+Defaults: `--secure-port` **10259**, `--leader-elect` true.
+
+### kube-controller-manager
+
+> Control plane component that runs controller processes. Logically, each controller
+> is a separate process, but to reduce complexity, they are all compiled into a
+> single binary and run in a single process.
+
+One binary, one process, many controllers running concurrently. The architecture page
+currently gives four examples:
+
+- **Node controller:** noticing and responding when nodes go down
+- **Job controller:** watching Job objects and creating Pods to run them to completion
+- **EndpointSlice controller:** populating EndpointSlice objects, linking Services to Pods
+- **ServiceAccount controller:** creating default ServiceAccounts for new namespaces
+
+The real inventory is far longer. `--controllers` defaults to `*` and covers dozens,
+including `deployment-controller`, `daemonset-controller`, `cronjob-controller`,
+`garbage-collector-controller`, `horizontal-pod-autoscaler-controller`,
+`namespace-controller`, `node-ipam-controller`, `node-lifecycle-controller` and the
+persistent volume controllers. Both `endpoints-controller` and
+`endpointslice-controller` still exist, so do not claim Endpoints was replaced.
+
+The node controller's timings are the ones you actually need during an incident:
+
+| Setting | Value | Meaning |
+|---|---|---|
+| `--node-monitor-period` | 5s | How often node state is polled |
+| `NodeMonitorGracePeriod` | 50s | Silence before `Ready` becomes `Unknown` |
+| Eviction delay | 5m | Between marking Unknown and the first eviction request |
+| `--node-eviction-rate` | 0.1/s | At most one node drained per 10 seconds |
+
+Eviction is taint based. The controller applies
+`node.kubernetes.io/unreachable` or `node.kubernetes.io/not-ready` as `NoExecute`
+taints. There is a safety valve: if the unhealthy fraction of a zone crosses
+`--unhealthy-zone-threshold` (0.55), evictions slow or stop, and if **every** zone is
+unhealthy the controller assumes the problem is control plane connectivity and stops
+evicting entirely.
+
+Default `--secure-port` is **10257**.
+
+### cloud-controller-manager (optional)
+
+> If you are running Kubernetes on your own premises, or in a learning environment
+> inside your own PC, the cluster does not have a cloud controller manager.
+
+It exists to decouple cloud specific logic from core Kubernetes, so providers can
+ship on their own schedule. It carries three controllers:
+
+- **Node controller:** updates Node objects with the cloud's identifier, region and zone labels, hostname and addresses, and asks the cloud API whether an unresponsive node still exists
+- **Route controller:** configures routes in the cloud so containers on different nodes can reach each other
+- **Service controller:** creates load balancers and related infrastructure when you declare a Service that needs them
+
+In-tree cloud providers are gone. In v1.36 the kubelet's `--cloud-provider` accepts
+only an empty value or `external`. With `external`, new nodes carry a
+`node.cloudprovider.kubernetes.io/uninitialized:NoSchedule` taint until a cloud
+controller manager initialises them.
+
+## How the control plane actually runs
+
+With kubeadm, the control plane is not systemd services. kubeadm writes **static Pod**
+manifests to `/etc/kubernetes/manifests`:
+
+```text
+/etc/kubernetes/manifests/
+├── etcd.yaml
+├── kube-apiserver.yaml
+├── kube-controller-manager.yaml
+└── kube-scheduler.yaml
+```
+
+Static Pods are managed directly by the kubelet, not by the API server. The kubelet
+creates a **mirror Pod** on the API server so they show up in `kubectl get pods`, but
+deleting that mirror Pod does not remove the static Pod. Only the kubelet can.
+
+One sharp edge: the kubelet reads every file in that directory that does not start
+with a dot, regardless of extension. Copying `kube-apiserver.yaml` to
+`kube-apiserver.yaml.backup` in place produces undefined behaviour. Move backups out
+of the directory.
+
+The kubelet is the one component that does run as an ordinary systemd service.
+
+Two HA topologies are documented:
+
+- **Stacked etcd**, the kubeadm default: each control plane node runs the API server, scheduler, controller manager and a local etcd member. Losing one node loses both an etcd member and a control plane instance, which is why the minimum is three.
+- **External etcd**: etcd runs on separate hosts. This decouples the failure domains but needs twice the machines, typically three control plane plus three etcd.
+
+## Node components
+
+Three things run on a node: the kubelet, a container runtime, and kube-proxy. Only
+the first two are mandatory.
+
+### kubelet
+
+> The kubelet takes a set of PodSpecs that are provided through various mechanisms
+> and ensures that the containers described in those PodSpecs are running and
+> healthy. The kubelet doesn't manage containers which were not created by
+> Kubernetes.
+
+That second sentence explains something people find surprising: a container you start
+by hand with `docker run` on a node is completely invisible to Kubernetes.
+
+PodSpecs arrive from three sources: the API server, a file path (`staticPodPath`), and
+an HTTP endpoint (`staticPodURL`). The latter two are how static Pods work.
+
+The kubelet self registers by default (`--register-node` is true). There is a nice
+security property in how it is allowed to label itself: labels in the `kubernetes.io`
+namespace must begin with `kubelet.kubernetes.io` or `node.kubernetes.io`, or come
+from a short allowlist. A compromised kubelet therefore cannot label its way into a
+privileged scheduling pool.
+
+Node status carries five conditions:
+
+| Condition | Meaning |
+|---|---|
+| `Ready` | True if healthy and accepting Pods, False if not, `Unknown` if the node controller has not heard from it within the grace period |
+| `MemoryPressure` | True if node memory is low |
+| `DiskPressure` | True if disk capacity is low |
+| `PIDPressure` | True if there are too many processes |
+| `NetworkUnavailable` | True if the node network is not correctly configured |
+
+`Ready` is tri-state. The other four are documented as binary.
+
+The **heartbeat mechanism is the most misunderstood detail in the whole
+architecture**, so it is worth being exact. There are two independent heartbeats, and
+the kubelet owns both:
+
+1. **Status updates.** `nodeStatusUpdateFrequency` (10s) is how often the kubelet *computes* status. `nodeStatusReportFrequency` (5m) is how often it *posts* status when nothing has changed.
+2. **Leases.** One Lease object per node in the `kube-node-lease` namespace, updated **every 10 seconds**. A Lease is far lighter than a Node status update, which is the point: it reduces the cost of liveness signalling in large clusters.
+
+So "the kubelet posts its status every 10 seconds" is wrong. It computes every 10
+seconds, posts on change or every 5 minutes, and liveness rides on the Lease.
+
+Other defaults worth knowing: `--max-pods` is **110**, the kubelet API is on **10250**,
+healthz is on 10248 bound to localhost, and the read-only port 10255 **defaults to 0,
+meaning disabled**, in KubeletConfiguration.
+
+### Container runtime and the CRI
+
+> Software responsible for running containers.
+
+The **Container Runtime Interface** is the plugin interface that lets the kubelet use
+different runtimes without recompiling cluster components. It is a gRPC protocol.
+containerd and CRI-O implement it directly; Docker Engine can be used through the
+out-of-tree `cri-dockerd` adapter.
+
+Since **v1.26 the kubelet requires the v1 CRI API**, and will not register a node whose
+runtime does not support it.
+
+On the dockershim question, since it still causes confusion: deprecation was announced
+in **v1.20** and removal shipped in **v1.24**. What was removed was the shim that let
+the kubelet drive Docker Engine, not support for Docker built images:
+
+> Yes, the images produced from docker build will work with all CRI implementations.
+> All your existing images will still work exactly the same.
+
+Image format (OCI) and runtime interface (CRI) are different layers. That is the whole
+explanation.
+
+One operational trap: the kubelet and the runtime must use the **same cgroup driver**.
+Mixing `cgroupfs` and `systemd` creates two cgroup managers and becomes unstable under
+resource pressure. The kubelet binary default is `cgroupfs`, but `systemd` is what the
+docs recommend and what kubeadm configures, so "the default is systemd" is wrong even
+though systemd is what you almost certainly want. Since **v1.34** the kubelet can ask
+the runtime which driver to use, and since **v1.35** nodes will not start on cgroup v1
+by default.
+
+### kube-proxy (optional)
+
+> kube-proxy maintains network rules on nodes. These network rules allow network
+> communication to your Pods from network sessions inside or outside of your
+> cluster.
+
+It is genuinely optional, and the docs say so:
+
+> If you use a network plugin that implements packet forwarding for Services by
+> itself, and providing equivalent behavior to kube-proxy, then you do not need to
+> run kube-proxy on the nodes in your cluster.
+
+The modes are where outdated writing shows up most:
+
+| Mode | Status in v1.36 |
+|---|---|
+| `iptables` | **Still the default on Linux** |
+| `nftables` | Stable since v1.33, requires kernel 5.13 or newer |
+| `ipvs` | **Deprecated in v1.35** |
+| `kernelspace` | Windows only, programs the Virtual Filtering Platform |
+
+Two things to get right here. First, **nftables being stable does not make it the
+default**. As of v1.36 `--proxy-mode` still documents `iptables` as the default. GA and
+default are different things.
+
+Second, the old "iptables is O(n), use IPVS for large clusters" advice is stale. The
+docs' own assessment of ipvs is blunt:
+
+> the kernel IPVS API turned out to be a bad match for the Kubernetes Services API,
+> and the ipvs backend was never able to implement all of the edge cases of
+> Kubernetes Service functionality correctly.
+
+nftables is positioned as the replacement for both, and on kernels too old for
+nftables the docs now recommend iptables over ipvs. Removal of ipvs is planned but not
+yet shipped.
+
+If you migrate iptables to nftables, the behaviour differences are real: NodePort
+Services bind only the node's primary addresses by default, localhost NodePorts stop
+working, and no firewall compatibility accept rules are added.
+
+## How the pieces communicate
+
+### Hub and spoke
+
+> Kubernetes has a "hub-and-spoke" API pattern. All API usage from nodes (or the pods
+> they run) terminates at the API server. None of the other control plane components
+> are designed to expose remote services.
+
+### Node to control plane
+
+This direction is secure by design. Nodes get the cluster root certificate and client
+credentials, usually a client certificate issued through kubelet TLS bootstrapping.
+Pods get the root certificate and a token injected automatically. The docs are
+comfortable with this path over hostile networks:
+
+> the default operating mode for connections from the nodes and pod running on the
+> nodes to the control plane is secured by default and can run over untrusted and/or
+> public networks.
+
+### Control plane to node
+
+This direction is where the sharp edges are, and there are two paths.
+
+**API server to kubelet**, used for `kubectl logs`, `kubectl exec` and port forwarding.
+It terminates at the kubelet's HTTPS endpoint, but:
+
+> By default, the API server does not verify the kubelet's serving certificate, which
+> makes the connection subject to man-in-the-middle attacks and unsafe to run over
+> untrusted and/or public networks.
+
+The fix is `--kubelet-certificate-authority` on the API server, plus kubelet
+authentication and authorization.
+
+**API server to nodes, Pods and Services** through the proxy functionality is worse:
+
+> ...default to plain HTTP connections and are therefore neither authenticated nor
+> encrypted. They can be run over a secure HTTPS connection by prefixing `https:` to
+> the node, pod, or service name in the API URL, but they will not validate the
+> certificate provided by the HTTPS endpoint nor provide client credentials. So while
+> the connection will be encrypted, it will not provide any guarantees of integrity.
+> These connections are not currently safe to run over untrusted or public networks.
+
+Encryption without integrity. Worth reading twice.
+
+SSH tunnels were the old answer and are now **deprecated**. The replacement is the
+**Konnectivity service**, where agents in the node network dial outbound to a server in
+the control plane network, and all control plane to node traffic rides those
+connections. Konnectivity has been **beta since v1.18** and its implementation lives
+outside core Kubernetes.
+
+### Default ports
+
+Control plane:
+
+| Protocol | Direction | Port | Purpose |
+|---|---|---|---|
+| TCP | Inbound | 6443 | Kubernetes API server |
+| TCP | Inbound | 2379-2380 | etcd client and peer API |
+| TCP | Inbound | 10250 | Kubelet API |
+| TCP | Inbound | 10259 | kube-scheduler |
+| TCP | Inbound | 10257 | kube-controller-manager |
+
+Worker nodes:
+
+| Protocol | Direction | Port | Purpose |
+|---|---|---|---|
+| TCP | Inbound | 10250 | Kubelet API |
+| TCP | Inbound | 10256 | kube-proxy health check |
+| TCP | Inbound | 30000-32767 | NodePort Services |
+| UDP | Inbound | 30000-32767 | NodePort Services |
+
+Note the NodePort range appears **twice**, once for TCP and once for UDP. Firewall
+rules that only cover TCP are a recurring source of confusion.
+
+If you find 8080, 10251 or 10252 in a runbook, it is out of date. Those were the
+insecure ports and they no longer exist.
+
+### The networking model
+
+Kubernetes takes a deliberately simple position: every Pod gets its own cluster wide
+IP address, and
+
+> All pods can communicate with all other pods, whether they are on the same node or
+> on different nodes. Pods can communicate with each other directly, without the use
+> of proxies or address translation (NAT).
+
+Containers inside one Pod share a network namespace and reach each other over
+`localhost`.
+
+Two layers are easy to conflate. The **CRI** sets up the Pod's network namespace. The
+**CNI plugin** implements the Pod network itself. They are different interfaces doing
+different jobs.
+
+### Version skew
+
+| Component | How far behind the API server it may run |
+|---|---|
+| kubelet, kube-proxy | 3 minor versions |
+| kube-controller-manager, kube-scheduler, cloud-controller-manager | 1 minor version |
+| kubectl | 1 minor version, either direction |
+
+The kubelet allowance became 3 in v1.25. If you learned "2", that is why. Kubernetes
+ships roughly three minor releases a year with about **14 months** of patch support
+each.
+
+## Addons
+
+> Addons use Kubernetes resources (DaemonSet, Deployment, etc) to implement cluster
+> features. Because these are providing cluster-level features, namespaced resources
+> for addons belong within the `kube-system` namespace.
+
+**DNS** is the one that is effectively mandatory: "all Kubernetes clusters should have
+cluster DNS". CoreDNS is the implementation, and there is a naming quirk worth knowing:
+the Deployment is called `coredns`, but the Service is deliberately still called
+`kube-dns`, for compatibility with workloads that hardcoded the old name.
+
+The default Pod `dnsPolicy` is `ClusterFirst`. Counterintuitively, the value named
+`Default` is **not** the default: it means "inherit resolver config from the node".
+
+**Node local addons run as DaemonSets**, which is how CNI plugins and log agents get
+onto every node. The DaemonSet controller adds tolerations for the pressure and
+unschedulable taints automatically, which is why `kubectl cordon` does not tear your
+networking out from under you. Note also that DaemonSet Pods do not bypass the
+scheduler: the controller sets node affinity and the default scheduler binds them.
+
+**Resource monitoring** in practice means metrics-server, which backs `kubectl top` and
+the autoscalers. Its own README is emphatic about scope:
+
+> Metrics Server is meant only for autoscaling purposes. For example, don't use it to
+> forward metrics to monitoring solutions, or as a source of monitoring solution
+> metrics.
+
+**Cluster level logging** needs a backend you provide. Kubernetes does not store logs.
+The kubelet rotates container logs at 10Mi across 5 files by default, and `kubectl logs`
+only ever returns the current file, so a Pod that writes 40Mi gives you the last 10Mi
+and nothing else.
+
+One caveat on the **Dashboard**: the `kubernetes/dashboard` repository was archived in
+January 2026 and is no longer maintained, with the maintainers pointing to Headlamp.
+The addons page still lists Dashboard without a deprecation note, so the docs lag
+reality here.
+
+## Common misconceptions
+
+A summary of the things worth unlearning:
+
+1. **"The control plane must run on dedicated machines."** Components can run on any machine. Colocation is a setup convention.
+2. **"You need three control plane nodes."** The only documented minimum is one worker node. Three comes from kubeadm HA guidance and etcd quorum.
+3. **"kube-proxy runs on every node."** It is listed as optional and some network plugins replace it.
+4. **"nftables is the default now that it is stable."** iptables is still the default in v1.36.
+5. **"Master node."** Legacy term. Use control plane node.
+6. **"Docker is Kubernetes' runtime."** dockershim was removed in v1.24 and only CRI v1 is supported since v1.26. Docker built images still work everywhere.
+7. **"The kubelet posts node status every 10 seconds."** It computes every 10s, posts on change or every 5m, and liveness rides on a Lease.
+8. **"It is HTTPS, so control plane to kubelet is safe."** The API server does not verify the kubelet's serving certificate by default.
+9. **"Only the API server can talk to etcd."** That is a security recommendation, not an enforced invariant.
+10. **"DaemonSets bypass the scheduler."** The controller sets node affinity, the default scheduler binds.
+11. **"Three etcd members is the production recommendation."** Three is the HA floor. Five is the recommendation.
+
+## References
+
+All official Kubernetes, etcd and CNCF sources.
+
+**Core architecture**
+
+- [Cluster Architecture](https://kubernetes.io/docs/concepts/architecture/)
+- [Kubernetes Components](https://kubernetes.io/docs/concepts/overview/components/)
+- [Nodes](https://kubernetes.io/docs/concepts/architecture/nodes/)
+- [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/)
+- [The Kubernetes API](https://kubernetes.io/docs/concepts/overview/kubernetes-api/)
+
+**Components**
+
+- [Kubernetes Scheduler](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/)
+- [Scheduler Configuration](https://kubernetes.io/docs/reference/scheduling/config/)
+- [Cloud Controller Manager](https://kubernetes.io/docs/concepts/architecture/cloud-controller/)
+- [Node Status](https://kubernetes.io/docs/reference/node/node-status/)
+- [Container Runtime Interface (CRI)](https://kubernetes.io/docs/concepts/architecture/cri/)
+- [Container Runtimes](https://kubernetes.io/docs/setup/production-environment/container-runtimes/)
+- [kube-apiserver reference](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
+- [kube-controller-manager reference](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/)
+- [kube-scheduler reference](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/)
+- [kubelet reference](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/)
+- [kube-proxy reference](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/)
+
+**Communication and networking**
+
+- [Communication between Nodes and the Control Plane](https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/)
+- [Ports and Protocols](https://kubernetes.io/docs/reference/networking/ports-and-protocols/)
+- [Services, Load Balancing, and Networking](https://kubernetes.io/docs/concepts/services-networking/)
+- [Cluster Networking](https://kubernetes.io/docs/concepts/cluster-administration/networking/)
+- [Virtual IPs and Service Proxies](https://kubernetes.io/docs/reference/networking/virtual-ips/)
+- [Set up the Konnectivity service](https://kubernetes.io/docs/tasks/extend-kubernetes/setup-konnectivity/)
+
+**etcd**
+
+- [Operating etcd clusters for Kubernetes](https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/)
+- [etcd FAQ](https://etcd.io/docs/v3.6/faq/)
+- [etcd hardware recommendations](https://etcd.io/docs/v3.6/op-guide/hardware/)
+- [etcd maintenance](https://etcd.io/docs/v3.6/op-guide/maintenance/)
+
+**Security**
+
+- [Encrypting Confidential Data at Rest](https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/)
+- [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)
+- [Kubelet authentication and authorization](https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/)
+- [Kubelet TLS bootstrapping](https://kubernetes.io/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/)
+
+**Topology and setup**
+
+- [Options for Highly Available Topology](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/ha-topology/)
+- [Creating Highly Available Clusters with kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/)
+- [Static Pods](https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/)
+- [kubeadm implementation details](https://kubernetes.io/docs/reference/setup-tools/kubeadm/implementation-details/)
+
+**Addons**
+
+- [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons/)
+- [DaemonSet](https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/)
+- [DNS for Services and Pods](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/)
+- [Resource metrics pipeline](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/)
+- [Logging Architecture](https://kubernetes.io/docs/concepts/cluster-administration/logging/)
+
+**Versions and lifecycle**
+
+- [Kubernetes Releases](https://kubernetes.io/releases/)
+- [Version Skew Policy](https://kubernetes.io/releases/version-skew-policy/)
+- [Deprecated API Migration Guide](https://kubernetes.io/docs/reference/using-api/deprecation-guide/)
+- [Updated: Dockershim Removal FAQ](https://kubernetes.io/blog/2022/02/17/dockershim-faq/)
+- [NFTables mode for kube-proxy](https://kubernetes.io/blog/2025/02/28/nftables-kube-proxy/)
