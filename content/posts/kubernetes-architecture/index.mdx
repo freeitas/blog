@@ -33,6 +33,12 @@ It is a worker because a kubelet registered it and Pods can be scheduled there.
 
 ## The control plane and node split
 
+![Kubernetes cluster architecture: the control plane holds etcd, the API server, the scheduler, the controller manager and an optional cloud controller manager, while each worker node runs a kubelet, a container runtime reached over the CRI and an optional kube-proxy. Every component connects to the API server, and only the API server reads and writes etcd.](./cluster-architecture.svg)
+
+*Only the API server reads and writes etcd. Everything else watches the API server
+and reconciles, which is why the shape is a hub and spoke rather than a chain of
+command.*
+
 The control plane makes the global decisions:
 
 > The control plane's components make global decisions about the cluster (for
