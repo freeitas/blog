@@ -13,6 +13,10 @@
 /.next/
 /out/
 
+# generated content layer
+/.contentlayer/
+/.velite/
+
 # production
 /build
 
@@ -34,3 +38,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# velite generated assets
+/public/static
+
+# browser tooling artifacts
+.playwright-mcp/
