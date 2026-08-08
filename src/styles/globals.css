@@ -9,7 +9,7 @@
 @source "../lib";
 
 /* MANDATORY. `darkMode: ["class"]` from the old tailwind.config.ts is a no-op
-   in v4 — v4's dark: variant defaults to prefers-color-scheme. Without this,
+   in v4, whose dark: variant defaults to prefers-color-scheme. Without this,
    every dark: class (including dark:prose-invert) stops responding to the
    theme toggle, and the build still passes. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -20,7 +20,7 @@
 }
 
 /* ============================================================
-   rehype-pretty-code — dual theme driven by class-based dark mode
+   rehype-pretty-code: dual theme driven by class-based dark mode
    ============================================================ */
 
 /* 1. Colours. In dual-theme mode rehype-pretty-code forces shiki's
@@ -41,7 +41,7 @@ html.dark [data-rehype-pretty-code-figure] code[data-theme*=" "] span {
   color: var(--shiki-dark);
 }
 
-/* Only the <pre> paints a background — rule 5 sets it. The nested <code> and
+/* Only the <pre> paints a background, set by rule 5. The nested <code> and
    its spans must stay transparent, or they paint their own --shiki-*-bg over
    the block and show as a lighter band inside it. This also overrides prose's
    own dark `pre` background, which would otherwise win in light mode. */
@@ -50,12 +50,19 @@ html.dark [data-rehype-pretty-code-figure] code[data-theme*=" "] span {
   background-color: transparent;
 }
 
-/* 2. Inline highlighted code (`docker ps{:bash}`) is wrapped in a span, not a
-      figure, and would otherwise inherit the full block background. */
+/* 2. Inline highlighted code is wrapped in a span, not a figure, and would
+      otherwise inherit the full block background.
+      It gets a faint tint rather than a transparent background: the horizontal
+      padding is needed for legibility, but with no background it just reads as
+      a gap before the following punctuation. */
 span[data-rehype-pretty-code-figure] > code[data-theme*=" "] {
-  background-color: transparent !important;
+  background-color: rgb(0 0 0 / 0.06) !important;
   padding: 0.15em 0.35em;
   border-radius: 0.25rem;
+}
+
+html.dark span[data-rehype-pretty-code-figure] > code[data-theme*=" "] {
+  background-color: rgb(255 255 255 / 0.1) !important;
 }
 
 /* 3. prose renders literal backticks around inline <code> via content: "`". */

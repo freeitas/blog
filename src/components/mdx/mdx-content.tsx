@@ -5,7 +5,7 @@ import { mdxComponents } from "./mdx-components";
 /**
  * Velite compiles MDX with `outputFormat: 'function-body'`, so the stored value
  * is a function body string rather than a module. Evaluating it here keeps the
- * whole thing in the server component — do NOT add "use client", or the entire
+ * whole thing in the server component. Do NOT add "use client", or the entire
  * compiled source gets serialised into the RSC payload and shipped to the browser.
  */
 const useMDXComponent = (code: string) => {
