@@ -5,12 +5,7 @@ date: "2026-08-08"
 tags: ["docker", "containers", "security", "devops"]
 ---
 
-Notes from a production-focused Docker course (~7h20, 10 lessons across 8 topics).
-Reorganized by subject, with technical terms corrected, since the source was an
-automatic transcription. The focus throughout: images and containers that are
-**faster, smaller, and more secure**.
-
-## Course map
+## Summary
 
 1. **Introduction to Docker**: the application lifecycle, containers vs VMs, orchestration (Kubernetes/Swarm/Compose), cloud and edge.
 2. **Build system**: Legacy Builder vs **BuildKit**, `buildx`, drivers/builders, **multi-platform** builds, manifests, Docker Bake.
@@ -692,9 +687,3 @@ RUN --mount=type=bind,source=package.json,target=package.json \
 6. **SBOM + attestation + signing:** **SPDX** (via Syft) lists components, **provenance (SLSA, `mode=max`)** proves how it was built, and **Cosign keyless** (or Notation v2) guarantees authenticity.
 7. **Docker Scout:** know **CVE/CWE/CVSS/EPSS**; prioritize by crossing **impact (CVSS) with probability (EPSS)** to avoid false positives; fix at the **base image** and through `npm audit`; use **policies and the Health Score**.
 8. **CI/CD (GitHub Actions):** build for CI → test with **Compose `--wait`** → analyze CVEs (**breaking on critical/high**) → **SARIF** into GitHub Security → final build with `metadata-action` → push → **sign with Cosign**, all accelerated by the **`gha` cache**.
-
----
-
-⚠️ These notes were produced from an **automatic transcription** of about 7h20 of
-audio and may contain small slips in naming. Always confirm commands and versions
-against the official Docker documentation before applying them in production.
