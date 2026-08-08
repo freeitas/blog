@@ -6,7 +6,7 @@ export type Page = (typeof pages)[number];
 const isDev = process.env.NODE_ENV === "development";
 
 /**
- * Newest first. Copied before sorting — sorting the imported array in place
+ * Newest first. Copied before sorting, because sorting the imported array in place
  * would mutate module state shared by every route that imports it.
  * Drafts are visible in dev only.
  *

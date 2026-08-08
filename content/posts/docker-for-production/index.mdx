@@ -1,27 +1,27 @@
 ---
 title: Docker for Production
-description: Study notes — BuildKit, image optimization, security, SBOM and signing, Docker Scout, and CI/CD
+description: Study notes on BuildKit, image optimization, security, SBOM and signing, Docker Scout, and CI/CD
 date: "2026-08-08"
 tags: ["docker", "containers", "security", "devops"]
 ---
 
 Notes from a production-focused Docker course (~7h20, 10 lessons across 8 topics).
-Reorganized by subject, with technical terms corrected — the source was an
+Reorganized by subject, with technical terms corrected, since the source was an
 automatic transcription. The focus throughout: images and containers that are
 **faster, smaller, and more secure**.
 
 ## Course map
 
-1. **Docker: introduction** — Docker across the application lifecycle, containers vs VMs, orchestration (Kubernetes/Swarm/Compose), cloud and edge.
-2. **Build system** — Legacy Builder vs **BuildKit**, `buildx`, drivers/builders, **multi-platform** builds, manifests, Docker Bake.
-3. **BuildKit features** — secrets, SSH, **cache/bind mounts**, cache backends, network, Bake.
-4. **Image optimization** — `docker init`, `.dockerignore`, analysis/debugging, base images, **multi-stage**, Dockerfile organization.
-5. **Security** — least privilege, namespaces/cgroups/capabilities/seccomp, non-root users.
-6. **SBOM, attestations, and signing** — SBOM (SPDX/Syft), provenance, signing (DCT/Notation/Cosign).
-7. **Docker Scout** — vulnerability analysis (CVE/CWE/CVSS/EPSS), recommendations, policies.
-8. **CI/CD with Docker** — a GitHub Actions pipeline, `gha` cache, testing with Compose, Scout analysis, release + Cosign signing.
+1. **Introduction to Docker**: the application lifecycle, containers vs VMs, orchestration (Kubernetes/Swarm/Compose), cloud and edge.
+2. **Build system**: Legacy Builder vs **BuildKit**, `buildx`, drivers/builders, **multi-platform** builds, manifests, Docker Bake.
+3. **BuildKit features**: secrets, SSH, **cache/bind mounts**, cache backends, network, Bake.
+4. **Image optimization**: `docker init`, `.dockerignore`, analysis/debugging, base images, **multi-stage**, Dockerfile organization.
+5. **Security**: least privilege, namespaces/cgroups/capabilities/seccomp, non-root users.
+6. **SBOM, attestations, and signing**: SBOM (SPDX/Syft), provenance, signing (DCT/Notation/Cosign).
+7. **Docker Scout**: vulnerability analysis (CVE/CWE/CVSS/EPSS), recommendations, policies.
+8. **CI/CD with Docker**: a GitHub Actions pipeline, `gha` cache, testing with Compose, Scout analysis, release + Cosign signing.
 
-## 1 — Docker: introduction
+## 1. Docker: introduction
 
 This is a Docker course **for production**, taught by a Docker Captain. Docker
 follows the **entire application lifecycle** (dev through production), and the
@@ -33,24 +33,24 @@ compatible technology** in production.
 
 ### Orchestration
 
-- **Kubernetes** — the most popular option for production, the "cloud OS". It **dropped Docker as its runtime**, but that only swapped the **engine**: **Docker images still work**. The unit is the **Pod**, which runs one or more containers.
-- Simpler alternatives: **Docker Compose in production** (may cause downtime during updates) and **Docker Swarm**, essentially "Compose on steroids" — multi-node, smoother updates, and resilience if a node goes down.
+- **Kubernetes**: the most popular option for production, the "cloud OS". It **dropped Docker as its runtime**, but that only swapped the **engine**, and **Docker images still work**. The unit is the **Pod**, which runs one or more containers.
+- Simpler alternatives: **Docker Compose in production** (may cause downtime during updates) and **Docker Swarm**, essentially "Compose on steroids", with multi-node support, smoother updates, and resilience if a node goes down.
 
 ### Containers vs VMs, and the cloud
 
 - A **VM** boots an entire OS and is heavy. A **container** is far lighter, which makes it the better fit in most cases.
-- Clouds run an engine underneath (Docker, Kubernetes, or something else) and you **rent only the containers** — which is cheaper.
+- Clouds run an engine underneath (Docker, Kubernetes, or something else) and you **rent only the containers**, which is cheaper.
 - Managed services: **AWS ECS/Fargate**, **Azure Container**, **Google Cloud Run**. Many have **Kubernetes behind them**, so you get Docker images without Docker underneath.
 - **Edge and IoT** run containers too, and they demand **extremely lean and secure** images.
 
-## 2 — The Docker build system
+## 2. The Docker build system
 
 ### Legacy Builder vs BuildKit
 
 The **legacy builder** is kept only for backward compatibility and is **not
 recommended**. In a traditional build, every instruction that changes the
 filesystem (`RUN`, `COPY`) **spins up a temporary container**, executes, commits,
-and **produces a layer** — the image being the sum of those layers. The problems:
+and **produces a layer**, the image being the sum of those layers. The problems:
 no parallelism, inefficient caching, and no way to export the cache.
 
 **BuildKit**, from the **Moby project**, is the evolution: **performance, parallel
@@ -64,8 +64,7 @@ The internal flow is **Dockerfile → frontend** (which translates the instructi
 **→ LLB** (*Low Level Build*, a **directed acyclic graph** defined in **protobuf**,
 `solver.proto`) **→ BuildKit Engine**, which produces the image.
 
-The **frontend** is what allows syntaxes other than the Dockerfile — YAML, for
-instance — since they all compile down to the **same LLB**. The official frontend
+The **frontend** is what allows syntaxes other than the Dockerfile (YAML, for instance), since they all compile down to the **same LLB**. The official frontend
 is the `docker/dockerfile` image, versionable through a `# syntax=` directive.
 
 ### Enabling BuildKit
@@ -92,7 +91,7 @@ Every builder uses a **driver**:
 | `docker-container` | BuildKit in a container plus **QEMU**, which enables **multi-platform builds**. |
 | `remote` | A remote BuildKit instance. |
 | `kubernetes` | Runs the build as a pod. |
-| `cloud` | Docker Build Cloud — optimized builds with **shared cache** and metrics. |
+| `cloud` | Docker Build Cloud. Optimized builds with **shared cache** and metrics. |
 
 `docker build` only ever uses the **default** builder; `docker buildx` lets you
 **choose** one.
@@ -109,7 +108,7 @@ local cache) or **`--push`** (to a registry).
 
 ### Multi-platform builds
 
-A **platform** is `os/architecture[/variant]` — `linux/amd64`, `linux/arm64/v7`,
+A **platform** is `os/architecture[/variant]`: `linux/amd64`, `linux/arm64/v7`,
 `windows/amd64`. You need the matching **kernel**, or emulation through
 `docker-container` or Build Cloud.
 
@@ -127,14 +126,13 @@ For multi-platform images, the **`index.json`** points at **several manifests**.
 
 ### Windows containers, manifests, and repository layout
 
-**Windows containers** run natively — they need the Windows kernel through
+**Windows containers** run natively, but they need the Windows kernel through
 **Hyper-V**, which requires Windows Pro, and images come from **MCR**
 (`mcr.microsoft.com`): Server Core, Nano Server. Docker Desktop handles the
 Linux ↔ Windows switch.
 
 Use `docker buildx imagetools inspect` to view and manage the **platforms** and
-manifests of an image. A **custom manifest** merges images — Linux and Windows,
-say — into a single index:
+manifests of an image. A **custom manifest** merges images (Linux and Windows, say) into a single index:
 
 ```bash
 docker buildx imagetools create -t account/app:1.1 account/app:linux account/app:windows
@@ -145,16 +143,15 @@ repositories per OS; a single repository with variant tags (`latest-linux`,
 `2.0-alpine`); or **multi-platform through an index** plus specific tags, which is
 the most current approach.
 
-## 3 — BuildKit features
+## 3. BuildKit features
 
 These are **optional** features for building efficient, secure images: secrets,
 SSH, cache and bind mounts, network control, and Bake.
 
-### Secrets — `--mount=type=secret`
+### Secrets: `--mount=type=secret`
 
 Use secrets such as tokens during the build **without** leaving them in the image.
-They never become a layer, never reach the cache, and never show up in the logs —
-not even with `--progress=plain`.
+They never become a layer, never reach the cache, and never show up in the logs, not even with `--progress=plain`.
 
 ```dockerfile
 RUN --mount=type=secret,id=githubtoken \
@@ -166,12 +163,11 @@ RUN --mount=type=secret,id=githubtoken \
 docker build --secret id=githubtoken,src=./token.txt -t app .
 ```
 
-You can consume a secret **as a file** — at `/run/secrets/<id>`, destroyed
-afterwards — or **as an environment variable**, scoped to that single line. In
+You can consume a secret **as a file**: at `/run/secrets/<id>`, destroyed afterwards, or **as an environment variable**, scoped to that single line. In
 Compose, `secrets` are declared per service, sourced from `file` or `environment`.
 Keep the `id` free of dashes and special characters.
 
-### SSH — `--mount=type=ssh`
+### SSH: `--mount=type=ssh`
 
 Reach SSH-protected resources during the build **without copying keys** into the
 image. The agent is taken from the host, mounted temporarily, then discarded.
@@ -189,8 +185,7 @@ Set up `known_hosts` with `ssh-keyscan github.com`, and install `git` and openss
 
 ### Traditional cache vs cache/bind mounts
 
-A `COPY` followed by a `RUN` produces **two layers**, and if **any** copied file
-changes — touching `package.json`, for example — everything is rebuilt. There is
+A `COPY` followed by a `RUN` produces **two layers**, and if **any** copied file changes (touching `package.json`, for example), everything is rebuilt. There is
 no way to reuse `node_modules`.
 
 **`--mount=type=bind`** mounts files during the build **without producing a
@@ -208,17 +203,17 @@ RUN --mount=type=bind,source=package.json,target=package.json \
 The trick here: changing the `package.json` name or description **does not
 invalidate** the npm cache, so the build stays fast.
 
-### Cache storage backends — `--cache-from` / `--cache-to`
+### Cache storage backends: `--cache-from` / `--cache-to`
 
 Where the cache is kept matters, because **production machines are ephemeral** and
 less building means lower cost. The types:
 
-- **`local`** — a directory: `--cache-to=type=local,dest=./cache` paired with `--cache-from=type=local,src=./cache`. Watch the `dest` vs `src` asymmetry.
-- **`registry`** — `ref=namespace/img:buildcache`, requires `--push`.
-- **`inline`** — cache **embedded in the image**, which is excellent for a shared **base image**.
-- **`gha`** — GitHub Actions cache, ready to use and fast in CI.
+- **`local`**: a directory. `--cache-to=type=local,dest=./cache` paired with `--cache-from=type=local,src=./cache`. Watch the `dest` vs `src` asymmetry.
+- **`registry`**: `ref=namespace/img:buildcache`, requires `--push`.
+- **`inline`**: cache **embedded in the image**, which is excellent for a shared **base image**.
+- **`gha`**: GitHub Actions cache, ready to use and fast in CI.
 
-### Network — `--network` / `--allow`
+### Network: `--network` / `--allow`
 
 Network access during the build: **`default`** (internet via NAT), **`host`** (the
 host's network, which needs `--allow network.host`), and **`none`** (isolated, for
@@ -231,10 +226,10 @@ RUN --network=none apt install -y ./packages/*.deb
 The motivation is supply chain risk: an install pulling "the latest version" can
 bring in malicious code. Prefer verified packages with a **checksum**.
 
-### Docker Bake — `docker buildx bake`
+### Docker Bake: `docker buildx bake`
 
 Released in early **2025**. **Bake is to images what Compose is to containers**: it
-describes and builds **several images** — targets and groups — at once, **in
+describes and builds **several images** (targets and groups) at once, **in
 parallel**, with caching. It accepts HCL, JSON, and YAML.
 
 ```hcl
@@ -252,28 +247,27 @@ docker buildx bake -f docker-bake.hcl -f docker-compose.yml  # merge files
 The **`contexts`** key resolves base-image dependencies, pointing a
 `FROM ns/base` at the target that produces it.
 
-## 4 — Image optimization
+## 4. Image optimization
 
 ### The six goals of a good production image
 
-1. **Small** — fewer packages, dependencies, and tools means less attack surface, faster deploys, lower transfer and storage costs, and quicker container startup. This is the **primary yardstick**.
-2. **Fast to build** — a 20-minute build stalls the pipeline; delivery has to stay efficient.
-3. **Secure** — a minimal base image (Alpine, distroless), least privilege, non-root user, immutable.
-4. **Cacheable** — reuse cache across builds through mount cache/bind, traditional caching, and deterministic commands.
-5. **Readable and maintainable** — comments, multi-stage, a logical Dockerfile structure.
-6. **Portable** — runs anywhere: locally, in the cloud, at the edge.
+1. **Small**: fewer packages, dependencies, and tools means less attack surface, faster deploys, lower transfer and storage costs, and quicker container startup. This is the **primary yardstick**.
+2. **Fast to build**: a 20-minute build stalls the pipeline; delivery has to stay efficient.
+3. **Secure**: a minimal base image (Alpine, distroless), least privilege, non-root user, immutable.
+4. **Cacheable**: reuse cache across builds through mount cache/bind, traditional caching, and deterministic commands.
+5. **Readable and maintainable**: comments, multi-stage, a logical Dockerfile structure.
+6. **Portable**: runs anywhere, whether locally, in the cloud, or at the edge.
 
 > Optimizing an image is iterative. It rarely comes out perfect the first time,
 > and over time you develop an instinct for making them smaller and smaller.
 
-### `docker init` — project scaffolding
+### `docker init`: project scaffolding
 
 A command from the **Docker Desktop** stack (v4.27 and later); it does **not**
 exist in Docker Engine. It generates a template of **four files**: `Dockerfile`,
 `.dockerignore`, `docker-compose.yml`, and `README.Docker.md`.
 
-It asks what kind of application you have — Go, Python, Node, Rust, PHP — and
-hands back a **production-ready Dockerfile**: multi-stage, a lean base image such
+It asks what kind of application you have (Go, Python, Node, Rust, PHP) and hands back a **production-ready Dockerfile**: multi-stage, a lean base image such
 as `node:alpine`, a **non-root** user, and a `.dockerignore` of roughly 32 lines
 that ignores `.git`, `node_modules`, and IDE directories. An excellent **starting
 point** to adapt.
@@ -281,22 +275,21 @@ point** to adapt.
 ### `.dockerignore`
 
 It prevents files and directories from being copied into the build context, which
-gives you a smaller image, no strange behavior, and **no leaked sensitive data** —
-a `.git` directory with a huge history, or files holding secrets.
+gives you a smaller image, no strange behavior, and **no leaked sensitive data**, such as a `.git` directory with a huge history, or files holding secrets.
 
 The syntax matches `.gitignore`. `**/*.log` ignores at any depth, and `!`
-(negation) re-includes exceptions — ignore every log but keep `happy.log`.
+(negation) re-includes exceptions, so you can ignore every log but keep `happy.log`.
 
 **Add it immediately**, in every environment. In production it is indispensable.
 
 ### Analyzing and debugging images
 
-- **`docker image inspect`** — metadata: `Entrypoint`/`Cmd`, `Env`, exposed ports, **labels**, architecture. Essential for confirming that a Dockerfile (which easily runs past 38 lines) produced what you expected and leaked nothing. One gotcha: a badly written `CMD` — no brackets or quotes, so it becomes shell form — can leave the container running in unexpected ways.
-- **`docker buildx imagetools inspect`** — inspects platforms and manifests, and doubles as validation: it errors if `amd64` and `arm64` weren't both produced.
-- **Debugging a build** — there are no breakpoints. The technique is to split one large `RUN` into several, print with `ls` and `cat`, and use **`--progress=plain`** (otherwise BuildKit hides the output) together with **`--no-cache`** to force execution and see the result.
-- **`docker history`** — shows layers, their size, and the command behind each one, so you can see which instruction bloated the image.
-- **`dive`** — a tool (~51k stars) more advanced than `history`: navigate layer by layer, see **the files in each layer**, **storage efficiency**, and **wasted space**. It can become a **CI gate**, failing an image below 90–95% efficiency.
-- **`docker debug`** — a Docker Desktop feature (**paid**: Pro/Team/Business). It attaches an auxiliary container full of tooling (`curl`, `wget`, editors via **Nix**) to your image or container, even for distroless images with no shell. Mac and Linux only; the commands are `run`, `print`, and `lint` of the entrypoint.
+- **`docker image inspect`** shows metadata: `Entrypoint`/`Cmd`, `Env`, exposed ports, **labels**, architecture. Essential for confirming that a Dockerfile (which easily runs past 38 lines) produced what you expected and leaked nothing. One gotcha: a badly written `CMD` (no brackets or quotes, so it becomes shell form) can leave the container running in unexpected ways.
+- **`docker buildx imagetools inspect`**: inspects platforms and manifests, and doubles as validation: it errors if `amd64` and `arm64` weren't both produced.
+- **Debugging a build**: there are no breakpoints. The technique is to split one large `RUN` into several, print with `ls` and `cat`, and use **`--progress=plain`** (otherwise BuildKit hides the output) together with **`--no-cache`** to force execution and see the result.
+- **`docker history`**: shows layers, their size, and the command behind each one, so you can see which instruction bloated the image.
+- **`dive`**: a tool (~51k stars) more advanced than `history`. Navigate layer by layer, see **the files in each layer**, **storage efficiency**, and **wasted space**. It can become a **CI gate**, failing an image below 90–95% efficiency.
+- **`docker debug`**: a Docker Desktop feature (**paid**: Pro/Team/Business). It attaches an auxiliary container full of tooling (`curl`, `wget`, editors via **Nix**) to your image or container, even for distroless images with no shell. Mac and Linux only; the commands are `run`, `print`, and `lint` of the entrypoint.
 
 ### Choosing a base image
 
@@ -306,13 +299,13 @@ The base determines size, available tooling, and compatibility.
 |---|---|---|
 | **Alpine** | ~5 MB (down to 3 MB) | Uses **musl libc** instead of glibc, plus **BusyBox**. Smallest, but ⚠️ can break apps that depend on **glibc**. Still has `sh` and `apk` for debugging. |
 | **Debian slim** (`bookworm`=12, `bullseye`=11) | ~20–50 MB | More compatible, more tooling included. |
-| **Debian `-slim`** | — | The lean Debian variant, dropping docs and locales. |
-| **Distroless** (Google) | very lean | Only what is **essential** to run — `nodejs` without `npm`/`npx`, and no shell. Requires **multi-stage**. A `:debug` variant with a shell exists. |
+| **Debian `-slim`** | n/a | The lean Debian variant, dropping docs and locales. |
+| **Distroless** (Google) | very lean | Only what is **essential** to run: `nodejs` without `npm`/`npx`, and no shell. Requires **multi-stage**. A `:debug` variant with a shell exists. |
 | **scratch** | 0 (empty) | An empty image, only for **static binaries** (Go, Rust). You cannot `pull` or debug it; maximum savings. |
 
 > The trade-off: Alpine, distroless, and scratch are smaller and more secure, but
 > less compatible and harder to debug. And remember those "5 MB" of Alpine are
-> **without** the language runtime — with Node it becomes roughly 119 MB.
+> **without** the language runtime; with Node it becomes roughly 119 MB.
 
 ### Multi-stage builds
 
@@ -320,8 +313,7 @@ The build is split into **stages**, effectively sub-images: each processes
 something and passes data along, and the **final image** inherits only from the
 final stage, discarding build junk and dev dependencies.
 
-This enables **CI/test stages** — `--target ci` stops early so you can run tests —
-and **parallelism**: stages with no dependency on each other run **at the same
+This enables **CI/test stages** (`--target ci` stops early so you can run tests) and **parallelism**: stages with no dependency on each other run **at the same
 time**, since BuildKit resolves the dependency graph. Building the app while
 processing a file that takes 10 seconds happens concurrently, which is a real
 time saving.
@@ -331,31 +323,29 @@ It pairs well with mount cache/bind and `COPY --from=builder`, and you can
 
 ### Organizing instructions in the Dockerfile
 
-- **Order by change frequency.** What **changes least** — `ENV`, `ARG`, `apt update`/`install`, setup — goes **at the top** to maximize cache reuse. What changes constantly, like your code, goes at the bottom.
+- **Order by change frequency.** What **changes least** (`ENV`, `ARG`, `apt update`/`install`, setup) goes **at the top** to maximize cache reuse. What changes constantly, like your code, goes at the bottom.
 - **Group related `RUN`s** into a single layer. Each `RUN` creates a **layer**; many of them mean more layers, a bigger image, and odd cache behavior. Use `&& \` and clean up at the end with `rm -rf /var/lib/apt/lists/*`.
 - **Deterministic vs non-deterministic.** `echo x` is deterministic; `apt install` (which grabs "the latest version") and `date` are not. **Pin versions**, keep volatile operations such as capturing `date` **on a single line**, and prefer `ARG` for predictability.
-- **`ADD` vs `COPY`.** To simply copy, use `COPY`. `ADD` downloads URLs, **automatically extracts** tar/gzip archives, and accepts **`--checksum`**, which protects against a tampered download — and the `ADD` + `RUN` pair reuses cache when the file hasn't changed.
+- **`ADD` vs `COPY`.** To simply copy, use `COPY`. `ADD` downloads URLs, **automatically extracts** tar/gzip archives, and accepts **`--checksum`**, which protects against a tampered download, and the `ADD` + `RUN` pair reuses cache when the file hasn't changed.
 - **Switch to a non-root user as early as possible.** Use `COPY --chown` and `WORKDIR` (which creates the directory) to avoid permission problems. More on this below.
 
-## 5 — Security
+## 5. Security
 
 Security is not about **perfect** protection, which is impossible. It is about
 **reducing flaws and mitigating** problems. There are two fronts: **building**
-secure images and **running** containers with restrictions. The orchestrator —
-Kubernetes, Swarm — also has to be configured well.
+secure images and **running** containers with restrictions. The orchestrator (Kubernetes, Swarm) also has to be configured well.
 
 ### The principle of least privilege
 
 **The golden rule:** grant **only what is necessary** and deny the rest by
-default. It applies to images, containers, networks, and access profiles — and
-even to how you structure software.
+default. It applies to images, containers, networks, and access profiles, and even to how you structure software.
 
 ### Containers and the Linux kernel
 
 A container is **an isolated process** that **shares the host's kernel**. The
 kernel constrains what it can do through **namespaces**, **cgroups**,
 **capabilities**, **seccomp**, and **LSMs** (AppArmor, SELinux). Docker already
-applies a reasonably restrictive configuration by default — but you can tighten it.
+applies a reasonably restrictive configuration by default, but you can tighten it.
 
 ### Namespaces (isolation)
 
@@ -363,7 +353,7 @@ Namespaces are what made containers as we know them possible: a container gets i
 own **network, PIDs, mounts, users, IPC, and UTS**, so it "believes" it is a fresh
 machine.
 
-**The risks:** sharing host resources opens holes — the host network, the host's
+**The risks:** sharing host resources opens holes: the host network, the host's
 **PIDs**, **mounting** host directories, **IPC** (shared memory between processes),
 and **UTS**, where an arbitrary hostname can mislead monitoring.
 
@@ -371,8 +361,7 @@ and **UTS**, where an arbitrary hostname can mislead monitoring.
 
 Created by Google around 2006 and part of the kernel since roughly 2010, cgroups
 **limit and isolate resource usage**: CPU, memory, disk and IO. Without limits a
-single container can consume 100% of CPU or memory and **take down every other
-container** — a common denial-of-service vector.
+single container can consume 100% of CPU or memory and **take down every other container**, a common denial-of-service vector.
 
 **Limiting resources is mandatory in production:**
 
@@ -380,14 +369,14 @@ container** — a common denial-of-service vector.
 docker run --rm --cpus 1 --memory 512m alpine
 ```
 
-In Compose, `deploy.resources` — which **Swarm** reads in production — provides
+In Compose, `deploy.resources` (which **Swarm** reads in production) provides
 `limits` and `reservations` for `cpus` and `memory`, alongside `cpu_shares`
 (priority, default 1024) and `blkio` (IO weight, `device_read_bps` /
 `device_write_bps`). Check actual usage with `docker stats`.
 
 ### Non-root users
 
-Many images — Java, Node, Python, PHP — run as **root** by default, so if you
+Many images (Java, Node, Python, PHP) run as **root** by default, so if you
 don't change it, your app runs as root in production. **Always** define a non-root
 user.
 
@@ -428,24 +417,23 @@ docker run --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID ngin
 
 In Compose that is `cap_drop: [ALL]` plus `cap_add: [...]`. To see the active
 capabilities, run `capsh --print` inside the container. **Privileged** containers
-get **all** of them, which is dangerous — avoid it.
+get **all** of them, which is dangerous, so avoid it.
 
 ### Seccomp (secure computing mode)
 
 Seccomp filters **which syscalls** a process may make, giving **finer** control
 than capabilities, and the two can be combined. In Compose it is configured
-through `security_opt` — `seccomp=...`, `no-new-privileges:true`, and AppArmor or
+through `security_opt`: `seccomp=...`, `no-new-privileges:true`, and AppArmor or
 SELinux options.
 
-## 6 — SBOM, attestations, and signing
+## 6. SBOM, attestations, and signing
 
 Three subjects that turn an image from a black box into something **transparent,
 auditable, and trustworthy**, by attaching **metadata** to it.
 
-### SBOM — Software Bill of Materials
+### SBOM: Software Bill of Materials
 
-An SBOM is a **list of the software's components** — dependencies, libraries, OS
-packages — much like a list of ingredients. It buys you **transparency and
+An SBOM is a **list of the software's components**: dependencies, libraries, OS packages, much like a list of ingredients. It buys you **transparency and
 traceability** (the origin and license of each component), fast incident response
 (with **Log4Shell**, knowing in seconds whether you run the vulnerable version),
 and **compliance** (ISO, audits).
@@ -455,7 +443,7 @@ better to have one**: you and your customers know the vulnerabilities, and
 security through obscurity is not security.
 
 The **standard format is SPDX** (System Package Data Exchange), part of **ISO
-5962** and maintained by the **Linux Foundation** — JSON or YAML listing each
+5962** and maintained by the **Linux Foundation**: JSON or YAML listing each
 package's name, version, and license. **CycloneDX** also exists.
 
 In practice, Docker uses **Syft** underneath:
@@ -467,11 +455,11 @@ docker buildx build --sbom=true -t app .     # embeds the SBOM in the layers
 docker buildx bake --sbom=true
 ```
 
-How Scout scans: it reads **metadata**, not source code — `/etc/os-release` for
+How Scout scans: it reads **metadata** rather than source code. `/etc/os-release` gives
 the distro, the package manager (`apk`, `apt`, `dpkg`), and language manifests
 (`package.json`, `requirements.txt`, `composer.json`, `pom.xml`).
 
-⚠️ The old `docker sbom` is **deprecated** — use `docker scout`. On plain Docker
+⚠️ The old `docker sbom` is **deprecated**: use `docker scout`. On plain Docker
 Engine, embedding an SBOM or attestation requires either `containerd` storage
 **or** the `docker-container` driver with `--push`; otherwise the attestation
 won't stay with the image.
@@ -479,7 +467,7 @@ won't stay with the image.
 ### Attestations and provenance (SLSA)
 
 An **attestation** is a digital proof attached to the image. The two main ones are
-the **SBOM (SPDX)** and **provenance (SLSA)** — the latter recording **how** the
+the **SBOM (SPDX)** and **provenance (SLSA)**: the latter recording **how** the
 image was built: base image, the Dockerfile including comments, platform, context,
 and every build step.
 
@@ -495,7 +483,7 @@ docker scout attestation get --predicate-type <type> myimage
 
 Signing works like a notary: it proves the image is **authentic and unmodified**.
 A **private key**, held only by the signer, produces the signature; the shareable
-**public key** verifies it. The signature lives **separately** — the image itself
+**public key** verifies it. The signature lives **separately**, and the image itself
 is **not** altered, since signing it into a new image would defeat the purpose.
 
 Why it matters: whoever pulls the image can confirm it is the official one, which
@@ -504,18 +492,18 @@ tampered registry. If the signature doesn't match, you don't deploy.
 
 **The tooling:**
 
-- **DCT / Docker Content Trust (Notary v1)** — Docker's own, from 2015, built around a central **Notary Server**. Now **deprecated**, with warnings starting August 2025; fewer than 0.05% of pulled images were signed. Used `DOCKER_CONTENT_TRUST=1` and `docker trust sign`.
-- **Notation v2 (CNCF)** — from 2022. **No** Notary server: the signature sits **alongside the image in the registry itself**, following **OCI/Artifacts** standards, with **KMS/Vault** integration for external keys and rotation. The flow is `notation cert generate-test`, `notation sign`, then a **trust policy** and `notation verify`. Sign by **digest**, not by tag.
-- **Cosign / Sigstore** — the **most widely adopted** today, and the one Docker is moving to. Maintained by **Chainguard**, tied to the Linux Foundation. The headline feature is **keyless**: **ephemeral certificates** issued over **OIDC** (Google, GitHub, Microsoft login), where **Fulcio** issues the certificate and **Rekor** is the immutable public log. No key to store or rotate.
+- **DCT / Docker Content Trust (Notary v1)**: Docker's own, from 2015, built around a central **Notary Server**. Now **deprecated**, with warnings starting August 2025; fewer than 0.05% of pulled images were signed. Used `DOCKER_CONTENT_TRUST=1` and `docker trust sign`.
+- **Notation v2 (CNCF)**: from 2022. **No** Notary server: the signature sits **alongside the image in the registry itself**, following **OCI/Artifacts** standards, with **KMS/Vault** integration for external keys and rotation. The flow is `notation cert generate-test`, `notation sign`, then a **trust policy** and `notation verify`. Sign by **digest**, not by tag.
+- **Cosign / Sigstore**: the **most widely adopted** today, and the one Docker is moving to. Maintained by **Chainguard**, tied to the Linux Foundation. The headline feature is **keyless**: **ephemeral certificates** issued over **OIDC** (Google, GitHub, Microsoft login), where **Fulcio** issues the certificate and **Rekor** is the immutable public log. No key to store or rotate.
 
 ```bash
 cosign sign myimage      # opens OIDC login in the browser, signs, publishes to the registry
 cosign verify --certificate-identity ... --certificate-oidc-issuer ... myimage
 ```
 
-## 7 — Docker Scout
+## 7. Docker Scout
 
-Docker's tool for **identifying vulnerabilities** in an image — "Scout" as in
+Docker's tool for **identifying vulnerabilities** in an image, "Scout" as in
 lookout. It combines the **SBOM** with a **vulnerability database** wired to the
 major global sources. It is useful across the whole cycle: in development (see and
 fix), in CI (block above a risk threshold), and in production (real-time alerts
@@ -523,12 +511,12 @@ for new CVEs).
 
 ### How the scan works
 
-1. **Detect the OS** by reading `/etc/os-release` and similar — Alpine? Debian? Windows?
+1. **Detect the OS** by reading `/etc/os-release` and similar. Alpine? Debian? Windows?
 2. **OS packages** through the package manager (`apk`, `apt`, `dpkg`).
-3. **Language dependency files** — `package.json` and its lockfile, `requirements.txt`, `pyproject.toml`, `composer.json`, `pom.xml`, Gradle.
+3. **Language dependency files**: `package.json` and its lockfile, `requirements.txt`, `pyproject.toml`, `composer.json`, `pom.xml`, Gradle.
 4. **Binary metadata** for Go, Rust, C++.
 
-> It spends more time reading **metadata** than binaries — it is **not** an
+> It spends more time reading **metadata** than binaries, and it is **not** an
 > antivirus. That's exactly why transparency helps: installing through a package
 > manager makes everything identifiable. It is possible to fool the scanner, for
 > instance by forging `/etc/os-release`. The tool **assists**; it does not solve
@@ -547,15 +535,15 @@ unlimited repositories. It integrates with ACR (Azure), ECR (AWS), and others.
 
 ### Essential terminology
 
-- **CVE** (Common Vulnerabilities and Exposures) — the record of **a single** vulnerability, maintained by **Mitre**, a US non-profit. IDs look like `CVE-YEAR-NNNNN`. Registration and validation are handled by **CNAs** (CVE Numbering Authorities): Google, Amazon, Microsoft, Red Hat, and individual researchers. See `cve.org`.
-- **CWE** (Common Weakness Enumeration) — the **category** of the flaw: **CWE-89** is SQL injection, **CWE-79** is XSS, CWE-22 is path traversal. One CVE can map to several CWEs.
-- **CVSS** (Common Vulnerability Scoring System) — **impact and severity** on a 0–10 scale, maintained by **FIRST**, built on four pillars: attack vector, complexity, privileges required, and impact on confidentiality/integrity/availability. The bands are **Low** 0.1–3.9, **Medium** 4.0–6.9, **High** 7.0–8.9, **Critical** 9.0–10. The current version is **4.0** (March 2025), which reclassifies some scores — something rated high under 3.1 can become medium under 4.0.
-- **EPSS** (Exploit Prediction Scoring System) — the **probability**, from 0 to 100%, that a vulnerability will be **exploited in the next 30 days**, from a statistical model by FIRST. It also gives a **percentile**, the relative position in the ranking. API at `api.first.org`.
+- **CVE** (Common Vulnerabilities and Exposures): the record of **a single** vulnerability, maintained by **Mitre**, a US non-profit. IDs look like `CVE-YEAR-NNNNN`. Registration and validation are handled by **CNAs** (CVE Numbering Authorities): Google, Amazon, Microsoft, Red Hat, and individual researchers. See `cve.org`.
+- **CWE** (Common Weakness Enumeration): the **category** of the flaw, so **CWE-89** is SQL injection, **CWE-79** is XSS, CWE-22 is path traversal. One CVE can map to several CWEs.
+- **CVSS** (Common Vulnerability Scoring System): **impact and severity** on a 0–10 scale, maintained by **FIRST**, built on four pillars: attack vector, complexity, privileges required, and impact on confidentiality/integrity/availability. The bands are **Low** 0.1–3.9, **Medium** 4.0–6.9, **High** 7.0–8.9, **Critical** 9.0–10. The current version is **4.0** (March 2025), which reclassifies some scores, so something rated high under 3.1 can become medium under 4.0.
+- **EPSS** (Exploit Prediction Scoring System): the **probability**, from 0 to 100%, that a vulnerability will be **exploited in the next 30 days**, from a statistical model by FIRST. It also gives a **percentile**, the relative position in the ranking. API at `api.first.org`.
 
 > **Read the two together.** Use CVSS **and** EPSS to **prioritize** and avoid
 > chasing **false positives**: a **high** CVE (CVSS 7.8) with an EPSS near 0% and a
 > low percentile rarely deserves your energy right now. And the highest CVSS isn't
-> always the priority — some scoring below 7 have a **greater chance** of being
+> always the priority: some scoring below 7 have a **greater chance** of being
 > exploited.
 
 ### Commands and formats
@@ -578,8 +566,8 @@ affects** the software, with a status and justification. Filters include
 
 ### Recommendations and remediation
 
-`recommendations` suggests **updating the base image** — `node:23-slim` to
-`24-slim`, cutting several CVEs at once — along with Dockerfile changes. Many CVEs
+`recommendations` suggests **updating the base image**: `node:23-slim` to
+`24-slim`, cutting several CVEs at once, along with Dockerfile changes. Many CVEs
 come **from the base image**, and patching on top of it doesn't help.
 
 For dependencies, use the package manager: `npm audit`, `npm audit fix --force`.
@@ -594,10 +582,9 @@ fixable high or critical findings. The **Health Score** (A–F) summarizes polic
 compliance. It integrates with Slack and Teams, and with CI (GitHub, GitLab,
 Jenkins) for **real-time alerts**.
 
-## 8 — CI/CD with Docker
+## 8. CI/CD with Docker
 
-The final chapter **pulls everything together**. Continuous Integration produces
-the artifact — the **Docker image of the new version**, ready for production.
+The final chapter **pulls everything together**. Continuous Integration produces the artifact: the **Docker image of the new version**, ready for production.
 CI/CD is part of **DevOps**, uniting Dev and Ops, where every change is validated
 automatically. The cycle: plan → code → **produce the artifact** → test and
 analyze → **release** → continuous deploy.
@@ -605,35 +592,34 @@ analyze → **release** → continuous deploy.
 ### GitHub Actions
 
 The most popular tool, with workflows written in **YAML** under
-`.github/workflows/`. It is just a **vehicle** — the concepts carry over to
+`.github/workflows/`. It is just a **vehicle**: the concepts carry over to
 Jenkins and GitLab CI.
 
 **Workflow structure:** `name`; **`on`** for triggers (push to `main`, tags
-`v*.*.*`, `pull_request`); `env` for global variables — ⚠️ these are **exposed**,
-so never use them for secrets; and **`jobs`**, each with `runs-on`
+`v*.*.*`, `pull_request`); `env` for global variables (⚠️ these are **exposed**, so never use them for secrets); and **`jobs`**, each with `runs-on`
 (`ubuntu-latest`) and `steps`.
 
 Docker's **marketplace actions**: `actions/checkout`,
 `docker/setup-buildx-action`, `docker/login-action`, `docker/build-push-action`,
 `docker/bake-action`, `docker/metadata-action`. Secrets go through
-`Settings → Secrets` and are read as `${{ secrets.X }}` — never through `env`.
+`Settings → Secrets` and are read as `${{ secrets.X }}`, never through `env`.
 Actions masks secrets in the logs.
 
 ### The pipeline built in the course
 
-1. **Build for CI** — a multi-stage build stopping at the **`ci` stage** (`--target ci`), with `load: true`, which the `docker-container` driver needs for the image to be available to later steps. The secret is passed through a YAML pipe.
-2. **Bring up the test environment** — `docker compose -f compose-ci.yml up -d --wait --wait-timeout 30`. **`--wait`** blocks until containers are **healthy**, via healthchecks such as `pg_isready` on the database and `curl` on the app, and **fails** if the timeout is exceeded. The Compose file already applies **resource limits** and **security restrictions** (`cap_drop`, `no-new-privileges`) in testing.
-3. **Tests** — if they pass, the environment came up correctly. Run the **fast tests first** for quicker feedback.
-4. **Build for analysis** — build through to the final stage, without provenance or SBOM (as clean as possible, since Engine doesn't store attestations), so the whole image can be scanned.
-5. **CVE analysis** — `docker scout cves --only-severity critical,high --exit-code` **breaks the pipeline** on a critical or high finding, while medium and low pass through into a report. `--summary` publishes to the job.
-6. **SARIF → GitHub Security** — generate `report.sarif` and upload it with `github/codeql-action/upload-sarif`. This requires an organization on a paid plan and `permissions: security-events: write`.
-7. **Final build + `metadata-action`** — `docker/metadata-action` generates **tags** automatically (edge on the default branch, **semver** on tags, the commit **sha**) plus **labels** (revision, source). The build runs with `provenance=mode=max` and `sbom=true`, then pushes to the registry.
-8. **Signing with Cosign** — `sigstore/cosign-installer` plus `cosign sign --yes` across **all tags** (extracted with `xargs`), using **keyless OIDC** (`id-token: write` in permissions), so there's no stored key. It only signs when the run is not a pull request.
+1. **Build for CI**: a multi-stage build stopping at the **`ci` stage** (`--target ci`), with `load: true`, which the `docker-container` driver needs for the image to be available to later steps. The secret is passed through a YAML pipe.
+2. **Bring up the test environment**: `docker compose -f compose-ci.yml up -d --wait --wait-timeout 30`. **`--wait`** blocks until containers are **healthy**, via healthchecks such as `pg_isready` on the database and `curl` on the app, and **fails** if the timeout is exceeded. The Compose file already applies **resource limits** and **security restrictions** (`cap_drop`, `no-new-privileges`) in testing.
+3. **Tests**: if they pass, the environment came up correctly. Run the **fast tests first** for quicker feedback.
+4. **Build for analysis**: build through to the final stage, without provenance or SBOM (as clean as possible, since Engine doesn't store attestations), so the whole image can be scanned.
+5. **CVE analysis**: `docker scout cves --only-severity critical,high --exit-code` **breaks the pipeline** on a critical or high finding, while medium and low pass through into a report. `--summary` publishes to the job.
+6. **SARIF → GitHub Security**: generate `report.sarif` and upload it with `github/codeql-action/upload-sarif`. This requires an organization on a paid plan and `permissions: security-events: write`.
+7. **Final build + `metadata-action`**: `docker/metadata-action` generates **tags** automatically (edge on the default branch, **semver** on tags, the commit **sha**) plus **labels** (revision, source). The build runs with `provenance=mode=max` and `sbom=true`, then pushes to the registry.
+8. **Signing with Cosign**: `sigstore/cosign-installer` plus `cosign sign --yes` across **all tags** (extracted with `xargs`), using **keyless OIDC** (`id-token: write` in permissions), so there's no stored key. It only signs when the run is not a pull request.
 
-### CI caching — `type=gha`
+### CI caching: `type=gha`
 
 `--cache-from type=gha` together with `--cache-to type=gha,mode=max` uses the
-**GitHub Actions cache**, which lives inside GitHub itself — fast, with no
+**GitHub Actions cache**, which lives inside GitHub itself, so it is fast with no
 registry latency. In the course's example it took the build from about 1m30 down
 to roughly 30s. `mode=max` caches intermediate stages, and `scope=<branch>`
 segments the cache per branch, though the default is global and shared, which
@@ -644,7 +630,7 @@ reuses more layers.
 The whole pipeline can be rebuilt around `docker buildx bake`: a
 `docker-bake.hcl` with `prod` and `ci` targets, **variables** and **secrets**,
 selecting `--file` and `--target`, and using `--set` to **override** any value.
-This pays off when **several images** — frontend and backend — are built together.
+This pays off when **several images** (frontend and backend) are built together.
 
 ## Quick command reference
 
@@ -703,7 +689,7 @@ RUN --mount=type=bind,source=package.json,target=package.json \
 3. **BuildKit features:** `--mount=type=secret/ssh/bind/cache` keeps secrets out of the image and dependency caches persistent; cache backends are `local`, `registry`, `inline`, and **`gha`**; `--network=none` for isolation.
 4. **Optimization:** `docker init`, `.dockerignore`, **multi-stage** (parallelism plus a lean image), base image choice (**Alpine ↔ Debian-slim ↔ distroless ↔ scratch**), instructions ordered by change frequency, and `dive`/`docker history` to audit layers.
 5. **Security:** **least privilege**; limit resources with **cgroups**, run as **non-root**, `--cap-drop ALL` plus only what's needed, **seccomp** and `no-new-privileges`.
-6. **SBOM + attestation + signing:** **SPDX** (via Syft) lists components, **provenance (SLSA, `mode=max`)** proves how it was built, and **Cosign keyless** — or Notation v2 — guarantees authenticity.
+6. **SBOM + attestation + signing:** **SPDX** (via Syft) lists components, **provenance (SLSA, `mode=max`)** proves how it was built, and **Cosign keyless** (or Notation v2) guarantees authenticity.
 7. **Docker Scout:** know **CVE/CWE/CVSS/EPSS**; prioritize by crossing **impact (CVSS) with probability (EPSS)** to avoid false positives; fix at the **base image** and through `npm audit`; use **policies and the Health Score**.
 8. **CI/CD (GitHub Actions):** build for CI → test with **Compose `--wait`** → analyze CVEs (**breaking on critical/high**) → **SARIF** into GitHub Security → final build with `metadata-action` → push → **sign with Cosign**, all accelerated by the **`gha` cache**.
 

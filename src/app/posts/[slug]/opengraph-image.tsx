@@ -28,8 +28,8 @@ export default async function OpengraphImage({
   const { slug } = await params;
   const post = getPostBySlug(slug);
 
-  // Metadata image routes ignore `export const dynamicParams = false` — Next's
-  // metadata-route loader strips it from the re-exports — so without this guard
+  // Metadata image routes ignore `export const dynamicParams = false`. Next's
+  // metadata-route loader strips it from the re-exports, so without this guard
   // the route generates and caches a real PNG for any invented slug, while the
   // post page itself correctly 404s.
   if (!post) notFound();

@@ -46,7 +46,7 @@ fingerprint and rewrite them:
 ![alt text](./diagram.png)
 ```
 
-Frontmatter is validated at build time — a missing `title` or a malformed
+Frontmatter is validated at build time, so a missing `title` or a malformed
 `date` fails the build rather than shipping broken.
 
 Use ` ```bash ` style fences; code is highlighted at build time (zero client JS)
@@ -54,7 +54,7 @@ and themed for both light and dark.
 
 `draft: true` hides a post in production while leaving it visible in `npm run dev`.
 
-> Images must use markdown `![]()` syntax, not `<Image>` JSX — Velite rewrites
+> Images must use markdown `![]()` syntax, not `<Image>` JSX. Velite rewrites
 > markdown image URLs, but does not touch JSX attributes.
 
 ## Configuration

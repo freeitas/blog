@@ -48,7 +48,7 @@ const collectImages = (node: MdastNode, found: MdastNode[] = []): MdastNode[] =>
  * Candidate on-disk paths for an image URL, most likely first.
  *
  * Velite pushes its own remarkCopyLinkedFiles ahead of user plugins, so by the
- * time this runs the URL is already the hashed `/static/name-abc123.ext` form —
+ * time this runs the URL is already the hashed `/static/name-abc123.ext` form,
  * and the asset has not been written to public/ yet, so reading it there fails.
  * The original file is still beside the .mdx, so strip the hash that the
  * configured `output.name` pattern added and look there first.
@@ -164,7 +164,7 @@ export default defineConfig({
     clean: true,
   },
   collections: { posts, pages },
-  // Must be `mdx:`, not `markdown:` — s.mdx() reads a different config branch,
+  // Must be `mdx:`, not `markdown:`. s.mdx() reads a different config branch,
   // and the wrong key applies zero plugins without erroring.
   // gfm defaults to true here, so remark-gfm is already applied; adding the
   // package would double-register it.

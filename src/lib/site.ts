@@ -8,7 +8,7 @@
 export const site = {
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   title: "freitas",
-  description: "software engineer — notes on security, containers and networks",
+  description: "software engineer writing about security, containers and networks",
   author: "Guilherme Freitas",
   locale: "en_US",
   links: {

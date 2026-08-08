@@ -46,7 +46,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       publishedTime: new Date(post.date).toISOString(),
       authors: [site.author],
       tags: post.tags,
-      // No `images` — the colocated opengraph-image.tsx is file-based metadata
+      // No `images`: the colocated opengraph-image.tsx is file-based metadata
       // and always takes precedence over anything set here.
     },
     twitter: {
