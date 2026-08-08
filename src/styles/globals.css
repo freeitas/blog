@@ -1,0 +1,113 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* v4 auto source-detection is rooted near this CSS file. Because globals.css
+   lives in src/styles/, declare the source roots explicitly or utilities used
+   only in src/app or src/components can silently go missing. */
+@source "../app";
+@source "../components";
+@source "../lib";
+
+/* MANDATORY. `darkMode: ["class"]` from the old tailwind.config.ts is a no-op
+   in v4 — v4's dark: variant defaults to prefers-color-scheme. Without this,
+   every dark: class (including dark:prose-invert) stops responding to the
+   theme toggle, and the build still passes. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Site ink colour as a token rather than the arbitrary value dark:bg-[#111010]. */
+@theme {
+  --color-ink: #111010;
+}
+
+/* ============================================================
+   rehype-pretty-code — dual theme driven by class-based dark mode
+   ============================================================ */
+
+/* 1. Colours. In dual-theme mode rehype-pretty-code forces shiki's
+      defaultColor:false, so the markup carries only --shiki-* custom
+      properties and nothing is coloured without this rule.
+      `pre` must be in the selector list: prose sets
+      pre { background-color: var(--tw-prose-pre-bg) } (near-black), which in
+      light mode would otherwise render light-theme text on a dark block. */
+[data-rehype-pretty-code-figure] pre[data-theme*=" "],
+[data-rehype-pretty-code-figure] code[data-theme*=" "],
+[data-rehype-pretty-code-figure] code[data-theme*=" "] span {
+  color: var(--shiki-light);
+}
+
+html.dark [data-rehype-pretty-code-figure] pre[data-theme*=" "],
+html.dark [data-rehype-pretty-code-figure] code[data-theme*=" "],
+html.dark [data-rehype-pretty-code-figure] code[data-theme*=" "] span {
+  color: var(--shiki-dark);
+}
+
+/* Only the <pre> paints a background — rule 5 sets it. The nested <code> and
+   its spans must stay transparent, or they paint their own --shiki-*-bg over
+   the block and show as a lighter band inside it. This also overrides prose's
+   own dark `pre` background, which would otherwise win in light mode. */
+[data-rehype-pretty-code-figure] code[data-theme*=" "],
+[data-rehype-pretty-code-figure] code[data-theme*=" "] span {
+  background-color: transparent;
+}
+
+/* 2. Inline highlighted code (`docker ps{:bash}`) is wrapped in a span, not a
+      figure, and would otherwise inherit the full block background. */
+span[data-rehype-pretty-code-figure] > code[data-theme*=" "] {
+  background-color: transparent !important;
+  padding: 0.15em 0.35em;
+  border-radius: 0.25rem;
+}
+
+/* 3. prose renders literal backticks around inline <code> via content: "`". */
+.prose :where(code)::before,
+.prose :where(code)::after {
+  content: none;
+}
+
+/* 4. The figcaption title carries data-theme but no style attribute, so the
+      --shiki-* vars are undefined on it. Hardcode its colours. */
+.prose figure[data-rehype-pretty-code-figure] {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.prose [data-rehype-pretty-code-title] {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.8em;
+  font-weight: 500;
+  border-radius: 0.375rem 0.375rem 0 0;
+  background-color: #eaeef2;
+  color: #24292e;
+}
+
+html.dark .prose [data-rehype-pretty-code-title] {
+  background-color: #2d333b;
+  color: #adbac7;
+}
+
+.prose figure[data-rehype-pretty-code-figure] > pre {
+  margin-top: 0;
+  border-radius: 0 0 0.375rem 0.375rem;
+}
+
+/* 5. github-light's background is pure white, identical to the page, which
+      leaves light-mode code blocks with no visual boundary. Give them a subtle
+      tint plus a border in both themes. */
+.prose figure[data-rehype-pretty-code-figure] pre[data-theme*=" "] {
+  background-color: #f6f8fa;
+  border: 1px solid rgb(0 0 0 / 0.1);
+  border-radius: 0.375rem;
+}
+
+html.dark .prose figure[data-rehype-pretty-code-figure] pre[data-theme*=" "] {
+  background-color: var(--shiki-dark-bg);
+  border-color: rgb(255 255 255 / 0.12);
+}
+
+/* A titled block keeps its square top edge so it meets the figcaption cleanly. */
+.prose figure[data-rehype-pretty-code-figure]:has([data-rehype-pretty-code-title])
+  > pre[data-theme*=" "] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}

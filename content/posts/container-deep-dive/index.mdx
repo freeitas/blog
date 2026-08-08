@@ -1,0 +1,225 @@
+---
+title: Container Deep Dive
+description: Containers
+date: "2025-03-17"
+tags: ["containers"]
+---
+
+## What is a container?
+
+A container is a standardized unit of software that packages code and all its dependencies so that software can run quickly and consistently in any environment.
+
+characteristics:
+
+- immutability
+- isolation of processes and computing resources
+- lightweight, runs as a process on the operating system
+
+container vs virtual machine:
+
+- Virtual Machines (VMs): Each VM runs a complete operating system, including the kernel, and uses a hypervisor to manage multiple VMs on the same hardware. This results in higher resource consumption, longer startup times, and less efficiency in terms of memory and CPU usage.
+- Containers: Share the host operating system's kernel, isolating only the application and its dependencies. This makes them significantly lighter, allowing for more efficient use of resources and almost instantaneous startup. Containers are ideal for scenarios that require rapid scalability and high density of applications on a single host.
+
+![Container vs Docker](./vmxdocker.png)
+
+## Namespaces and isolation of resources
+
+Namespaces are used so that a container can be executed safely. We need mechanisms to ensure the isolation of resources and processes.
+
+Main technology behind containers to achieve isolation:
+
+- PID (Process ID): Process isolation.
+- NET (Network): Isolation of network interfaces and stack.
+- MNT (Mount): File system isolation.
+- UTS (Unix Timesharing System): Hostname isolation.
+- IPC (Inter-Process Communication): Isolation of communication between processes.
+- USER: User identity isolation.
+
+## Cgroups and control of resources
+
+cgroups (Control Groups)
+A Linux Kernel feature that allows limiting, monitoring, and isolating resource usage of processes
+
+- CPU
+- Memory
+- Disk
+- Network
+
+![Cgroups and Namespaces](./cgroup.png)
+
+## LXC - Linux Containers
+
+System responsible for executing and managing containers, creating an isolated environment so that applications can be executed consistently and efficiently.
+
+- Isolation
+- Resource management
+- Network management and communication between containers
+- Storage: volume management and file systems (Overlay)
+- Monitoring, metrics, logs, and container state
+- Does not have a friendly user interface by default
+- Requires greater knowledge of Linux administration
+
+most well known:
+
+- LXC - Linux Containers
+- Docker
+- rkt (Rocket)
+- CRI-O
+- Podman
+
+LXC (Linux Containers) - 2008
+
+- First container system that offered a lightweight virtualization environment using cgroups and namespaces of Linux.
+- Is considered low level compared to solutions like Docker, which offer more abstraction and ease of use
+- Uses Linux tools
+- Does not have a friendly user interface by default
+- Requires more knowledge of Linux administration
+
+## Open Container Initiative (OCI)
+
+Open Container Initiative (OCI):
+The Open Container Initiative (OCI) is an open and lightweight governance structure, created under the Linux Foundation, with the purpose of establishing open industry standards for container formats and runtimes. The OCI was launched on June 22, 2015, by Docker, CoreOS, and other container industry leaders.
+
+Currently, the OCI contains three main specifications:
+
+- Runtime Specification (runtime-spec): Defines how to execute a "filesystem bundle" that is unpacked on disk. It establishes how the environment should be configured for the container to be started, including requirements such as cgroups, namespaces, device configurations, and permissions.
+- Image Specification (image-spec): Defines how to create an OCI image, which includes the image manifest, filesystem serialization (layers), and image configurations. The image manifest contains metadata about the content and dependencies of the image, while the configuration includes information such as execution commands, environment variables, and other configurations needed to start the container.
+- Distribution Specification (distribution-spec): Introduced in 2020, standardizes the API for container image distribution. This specification is designed to be generic enough to be used as a distribution mechanism for any type of content, allowing container images to be easily stored and retrieved from registries, such as Docker Hub.
+
+## Containerd and runc
+
+- containerd is a lower-level container runtime that manages the container lifecycle, including execution, pausing, stopping, and removing containers. It is a separate project, originally part of Docker, but now an independent component maintained by the Cloud Native Computing Foundation (CNCF).
+  - Relationship between Docker and containerd: Docker uses containerd as one of its fundamental components to efficiently manage containers. Docker's architecture is built on containerd, which in turn uses runc (OCI-compatible) to create and run containers at the system level. Docker CLI and Docker Daemon communicate with containerd to perform high-level operations, such as creating new containers or executing commands in them.
+  - Benefits of containerd: Separating containerd as an independent project brought greater modularity and flexibility to the container ecosystem. Other tools and orchestrators, such as Kubernetes, also use containerd as the standard runtime due to its efficiency and adherence to OCI standards.
+
+The main components of containerd include:
+
+- Main Daemon: The central service that coordinates all container-related operations, functioning as a gRPC server to manage the container lifecycle (GitHub).
+
+- Client: An interface that allows users to interact with the containerd daemon, sending commands and receiving responses for operations such as creating, running, and managing containers (GitHub).
+
+- Image Storage: Manages the download, storage, and distribution of container images, ensuring that the necessary images are available for container execution (containerd).
+
+- Container Execution: Responsible for starting and supervising the execution of containers, ensuring they operate as expected (containerd).
+
+- Network Primitives: Provides functionality for creating, modifying, and deleting network interfaces, allowing containers to connect to networks as needed (containerd).
+
+- CRI Plugin (Container Runtime Interface): Implements the container runtime interface for Kubernetes, allowing containerd to be used as a runtime in Kubernetes environments (GitHub).
+
+### How containerd and runc work together
+
+- containerd and runc work together to create and manage containers in Docker and other containerization systems that follow the OCI standard.
+- When you run a command like docker run, the Docker CLI communicates with the Docker Daemon to request the creation of a new container.
+- The Docker Daemon then communicates with containerd to manage the container lifecycle.
+- containerd uses runc to effectively create the container, applying all isolation configurations, such as namespaces and cgroups.
+- runc creates the isolated process and configures namespaces and cgroups as defined by OCI specifications. It executes the initial process inside the container (for example, /bin/sh or any specified command).
+- Once the container is running, containerd continues to monitor its state and allows commands such as pause, resume, and stop to be executed through the gRPC API.
+
+### Difference between containerd and Docker Daemon
+
+Docker Daemon: The Docker Daemon (dockerd) is the main process that coordinates all Docker-related operations. It receives commands from the Docker CLI, interacts with containerd, and manages images, containers, networks, and volumes. The Docker Daemon is responsible for providing the high-level interface for developers and operators who use Docker to manage containers easily.
+
+containerd: containerd is a lower-level container runtime that handles the container lifecycle, including execution, pausing, restarting, and removing containers. containerd was created to be a modular and independent tool that can be used by other container orchestrators such as Kubernetes. It is responsible for communicating directly with runc for container creation, while the Docker Daemon is more focused on providing a high-level interface and management functionality.
+
+Relationship between containerd and Docker Daemon: The Docker Daemon is built on top of containerd. When you run a Docker command, the Docker Daemon delegates container-related operations to containerd, which in turn uses runc to effectively create and run the container. Thus, the Docker Daemon serves as an orchestration and abstraction layer, while containerd performs lower-level operations.
+
+### About runC
+
+runc is the low-level container runtime that follows the Open Container Initiative (OCI) specifications, ensuring that any container created with runc complies with the standards defined for portability and interoperability between container tools.
+
+Function of runc: runc is responsible for creating and executing containers at the lowest level of the system. It uses Linux kernel features, such as namespaces and cgroups, to create an isolated and controlled environment where a container runs. runc is responsible for applying isolation configurations, setting resource limits, and starting the main process inside the container.
+
+How runc Works: When the command to create a container is passed by containerd, runc reads the generated configuration file, which defines details such as namespaces, cgroups, devices, environment variables, among others. From this configuration, runc creates an isolated process that will be the container. runc does not manage the container lifecycle after its creation, as this is containerd's function.
+
+OCI and runc: By being compatible with OCI specifications, runc ensures that the container format and execution practices are standardized, which means that containers created with runc are portable and can be run in other OCI-compatible environments.
+
+History of runc: Originally, runc was an integral part of Docker, but with the creation of OCI, it was extracted and transformed into an independent project to serve as a universal container runtime. This helped promote a more open and interoperable ecosystem, where multiple tools can share the same runtime.
+
+Operation:
+
+- If you have containerd and runc installed, it's possible to create a container directly without using Docker. First, you must prepare a configuration for the container using a JSON file following OCI specifications.
+
+- Then, runc can be used to initialize the container with this configuration file. This process demonstrates how runc acts as the direct executor of the container, while containerd or Docker provide the abstraction layer to facilitate management.
+
+## Filesystem - tmpfs, proc, sysfs, mqueue, debugfs, cgroups
+
+When a container is created, some folders are mounted at runtime, such as: /dev, /run, /tmp, /sys, /proc, etc.
+
+### tmpfs
+
+tmpfs is a temporary filesystem that stores data in RAM memory. It combines the functionality of a filesystem and volatile memory, offering an extremely fast storage area. In containers, tmpfs is very useful for storing data that doesn't need to persist after restarting or destroying the container.
+
+Main Characteristics:
+
+- It's mounted in RAM, providing very fast data access.
+- All data stored in tmpfs is volatile and will be lost after container restart.
+- It's useful for storing temporary data, such as caches or intermediate files.
+  Main Folders Mounted with tmpfs:
+- /dev: Often mounted as tmpfs to store devices that are dynamically created and destroyed.
+- /run: Used to store runtime data, such as PID files or sockets.
+- /dev/shm: A shared memory system used for inter-process communication (IPC).
+  Relevant Points and Relationships:
+- tmpfs is frequently used in conjunction with other filesystems like procfs and mqueue to provide temporary areas for process data storage and communication, ensuring isolation and high performance. However, there is no direct dependency between tmpfs and other systems, just combined usage for certain functionalities.
+
+### proc or /procfs
+
+procfs is a virtual filesystem that provides an interface to access information about the kernel and running processes. Unlike traditional filesystems, it doesn't store data on disk, but rather information dynamically generated by the kernel in real time.
+
+Main Characteristics:
+
+- It's used to access system information, such as CPU usage, memory, information about processes, among others.
+- Typically mounted at /proc inside the container, providing access to kernel state.
+  Main Folders and Files in /proc:
+- /proc/cpuinfo: Contains detailed information about the processor.
+- /proc/meminfo: Provides statistics about memory usage.
+- /proc/[PID]: Contains information about a specific process, where [PID] is the process ID.
+- /proc/mounts: Lists all currently mounted filesystems.
+  Relevant Points and Relationships:
+- procfs doesn't directly depend on other filesystems, but serves as an information source for several others, including mqueue and sysfs, which benefit from the data provided by procfs to understand the state of the system and processes.
+- mqueue doesn't directly access procfs data, but procfs information can be indirectly used to monitor processes that use message queues.
+
+### sysfs
+
+sysfs is a virtual filesystem that provides a hierarchical view of devices and kernel modules. It was introduced to facilitate interaction between the kernel and user space, replacing parts of procfs that were related to device configuration.
+
+Main Characteristics:
+
+- Mounted at /sys, sysfs offers a structured way to interact with devices and their attributes.
+- Allows applications and users to read and modify hardware configurations and kernel modules.
+  Main Folders in /sys:
+- /sys/class: Contains device classes, such as network devices and disks.
+- /sys/block: Provides information about block devices, such as disks and partitions.
+- /sys/devices: Shows all devices connected to the system, structured hierarchically.
+  Relevant Points and Relationships:
+- sysfs complements procfs by providing detailed information about hardware devices, while procfs focuses on processes and kernel states.
+- There is no direct dependency between sysfs and procfs, but they complement each other to provide a complete view of the system and its devices.
+
+### mqueue
+
+mqueue is a filesystem that supports POSIX message queues. It is used for inter-process communication (IPC) through asynchronous messages, allowing different processes to exchange information safely and efficiently.
+
+POSIX messages (Portable Operating System Interface) are a standard for inter-process communication, allowing information to be sent between different processes in an organized and asynchronous manner, ensuring compatibility and efficiency in UNIX and similar systems.
+
+Main Characteristics:
+
+- Mounted at /dev/mqueue inside containers.
+- Offers an efficient form of inter-process communication, being used in systems that need high performance in message exchange.
+  Folders and Files:
+- /dev/mqueue: Contains message queues created by processes. Each queue is represented as a file in this directory.
+  Relevant Points and Relationships:
+- mqueue operates independently and doesn't directly access procfs data. However, system administration can use procfs to monitor processes that interact with mqueue.
+- mqueue is an independent filesystem and doesn't depend on tmpfs to be mounted. tmpfs can be used together to provide temporary storage, but this is a configuration choice and not a dependency.
+
+### debugfs
+
+debugfs is a filesystem created for kernel debugging purposes. It allows access to detailed and sometimes sensitive kernel information, being an essential tool for developers who need to debug system behavior.
+
+Main Characteristics:
+
+- It's generally mounted manually only when needed, typically at /sys/kernel/debug.
+- Provides access to information that isn't available in procfs or sysfs.
+  Folders in /sys/kernel/debug:
+- Contains various folders and files that allow interaction with different kernel subsystems.
+- For example, /sys/kernel/debug/tracing offers tools for monitoring kernel events.
+  Relevant Points and Relationships:
+- debugfs doesn't directly depend on procfs or sysfs, but provides complementary debugging information that isn't available in these other filesystems. It's especially useful when detailed data about kernel execution is needed that can't be found in other sources.
