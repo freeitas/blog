@@ -1,0 +1,589 @@
+---
+title: Pods, ReplicaSets, Deployments and Services
+description: Four objects, one escalation, and why each layer exists because the one below it cannot do a specific thing
+date: "2026-08-09"
+tags: ["kubernetes", "containers", "devops"]
+---
+
+This picks up where [Kubernetes Architecture](/posts/kubernetes-architecture) left
+off. That post covered the machinery: the control plane, the nodes, and the
+reconciliation loop that drives everything. This one covers the objects you
+actually write, and targets Kubernetes v1.36.x.
+
+The four fit together as an escalation, where each layer exists because the layer
+below it cannot do one specific thing:
+
+- A **Pod** runs your containers. When it dies, it stays dead.
+- A **ReplicaSet** keeps N Pods alive. It cannot change them.
+- A **Deployment** changes them safely, by owning ReplicaSets rather than Pods.
+- A **Service** puts one stable address in front of a set whose members are being replaced continuously.
+
+The sentence that makes the rest click: these are four separate API objects driven
+by separate controllers, and **none of them knows about the others except through
+labels and owner references**. Nothing is wired together. Everything is matched.
+
+Not covered here: StatefulSets (for workloads that need stable identity and
+storage), DaemonSets (one Pod per node), and Jobs and CronJobs (run to completion).
+They are the other members of the same family.
+
+## Layer 1: the Pod
+
+> Pods are the smallest deployable units of computing that you can create and
+> manage in Kubernetes.
+
+More usefully:
+
+> A Pod is a group of one or more containers, with shared storage and network
+> resources, and a specification for how to run the containers.
+
+The shared context is concrete rather than metaphorical. It is a set of Linux
+namespaces and cgroups, the same primitives underneath any container runtime.
+
+**Network.** The Pod gets one IP address per address family, and every container in
+it shares that network namespace. They reach each other over `localhost`, and the
+corollary is that they **share a port space**, so two containers in one Pod cannot
+both bind 8080.
+
+**Storage.** Volumes are declared at Pod level and mounted by any container in it.
+A volume survives a container restart, which is what makes the sidecar pattern work.
+
+**Process isolation** stays on by default. `shareProcessNamespace` is `false` unless
+you opt in. Turning it on has real consequences worth knowing: no container process
+is PID 1 any more, and `/proc` becomes cross-visible between containers, including
+process arguments and environment, which is where secrets often live.
+
+Here is the whole thing:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/version: "2.1"
+spec:
+  containers:
+    - name: web
+      image: registry.example.com/web:2.1
+      ports:
+        - containerPort: 8080
+          name: http
+```
+
+That runs. It is also scheduled exactly once and never rescheduled. If the node
+goes away, so does the Pod, permanently.
+
+This is the part people misread. Kubernetes does not repair a broken Pod:
+
+> Kubernetes does not attempt to heal the Pod further; instead, Kubernetes deletes
+> the Pod and relies on other components to provide automatic healing.
+
+A given Pod, identified by its UID, is never moved and never resurrected. A
+controller creates a **new** one that looks the same. That is the entire reason the
+next three layers exist.
+
+### Phases are not health
+
+A Pod's `phase` is a coarse summary, and it is routinely mistaken for a readiness
+signal:
+
+| Phase | Meaning |
+|---|---|
+| `Pending` | Accepted by the cluster, but not all containers are running yet. Includes time spent scheduling and pulling images |
+| `Running` | Bound to a node, all containers created, at least one is running, starting or restarting |
+| `Succeeded` | All containers terminated successfully and will not be restarted |
+| `Failed` | All containers terminated, at least one with a failure |
+| `Unknown` | State could not be obtained, usually a node communication problem |
+
+Read the `Running` row again. It includes **restarting**. A Pod crash-looping every
+ten seconds is `Running`. Readiness lives in the Pod's conditions instead:
+`PodScheduled`, `Initialized`, `ContainersReady` and `Ready`.
+
+While we are here: `CrashLoopBackOff` and `Terminating` are not phases. They are
+display strings that `kubectl` computes for the STATUS column.
+
+### Termination
+
+`terminationGracePeriodSeconds` defaults to **30**. The kubelet sends the
+termination signal, waits, then sends SIGKILL. One detail that catches people: a
+`preStop` hook runs **inside** that window rather than in addition to it. If your
+hook sleeps for 40 seconds with a 30 second grace period, the hook does not get
+40 seconds.
+
+### Sidecars are init containers now
+
+Since v1.33 a sidecar is a first-class thing, and it is not what you would guess.
+It is an entry in `initContainers` with a container-level `restartPolicy` of
+`Always`:
+
+```yaml
+spec:
+  initContainers:
+    - name: log-shipper
+      image: registry.example.com/log-shipper:1.4
+      restartPolicy: Always      # this is what makes it a sidecar
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+  containers:
+    - name: web
+      image: registry.example.com/web:2.1
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/app
+  volumes:
+    - name: logs
+      emptyDir: {}
+```
+
+It starts before the app container, keeps running for the Pod's lifetime, ignores
+the Pod-level `restartPolicy`, and shuts down after the last main container exits.
+Stable since v1.33, so no feature gate.
+
+## Layer 2: the ReplicaSet
+
+**The problem it solves:** a Pod that dies stays dead.
+
+> A ReplicaSet's purpose is to maintain a stable set of replica Pods running at any
+> given time.
+
+Three fields define one: a `selector`, a `replicas` count, and a `template` for
+making new Pods.
+
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+        app.kubernetes.io/version: "2.1"
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/web:2.1
+          ports:
+            - containerPort: 8080
+              name: http
+```
+
+### It does not only manage Pods it created
+
+This is the most underappreciated detail in the whole object, and it follows
+directly from "everything is matched, nothing is wired".
+
+Apply that ReplicaSet while the Pod from the previous section is still running and
+the ReplicaSet **adopts it**. The Pod matches the selector and has no controller
+owner, so the ReplicaSet claims it and then creates only two more.
+
+The docs are explicit that this can get weird: a ReplicaSet can own a
+non-homogeneous set of Pods, because the selector is the only thing being checked.
+Nothing compares a Pod's image against the template. If a stray Pod running a
+completely different image happens to carry the matching label, it gets counted.
+
+The precise condition for adoption is that the Pod has **no controller
+ownerReference**. An ownerReference with `controller: true` is exclusive and blocks
+everyone else.
+
+### Why you do not write these
+
+The docs do not hedge:
+
+> A Deployment is a higher-level concept that manages ReplicaSets and provides
+> declarative updates to Pods along with a lot of other useful features. Therefore,
+> we recommend using Deployments instead of directly using ReplicaSets.
+
+The mechanical reason is one sentence: **ReplicaSets do not support a rolling update
+directly.** A ReplicaSet reconciles a count and an ownership set. It never changes
+the content of a Pod. Change the template and existing Pods are left exactly as they
+are; only Pods created after the change get the new template.
+
+So you have an object that keeps N things alive but cannot upgrade them. Hence the
+next layer.
+
+## Layer 3: the Deployment
+
+**The problem it solves:** a ReplicaSet cannot change its Pods.
+
+> You describe a desired state in a Deployment, and the Deployment Controller
+> changes the actual state to the desired state at a controlled rate.
+
+The key structural fact: **a Deployment does not create Pods.** It creates and owns
+ReplicaSets, and those create Pods. A rollout is the Deployment creating a *new*
+ReplicaSet and shifting replicas from the old one to the new one.
+
+What keeps the two ReplicaSets apart is a label called `pod-template-hash`, which
+the Deployment controller computes from the Pod template and injects into the
+ReplicaSet's selector and its Pods. That detail explains a behaviour that otherwise
+looks arbitrary: since the hash covers the **template only**, changing `replicas`,
+the strategy, or an annotation outside the template produces no new hash and
+therefore no new ReplicaSet.
+
+Which is the rule worth memorising:
+
+> A Deployment's rollout is triggered if and only if the Deployment's Pod template
+> (that is, `.spec.template`) is changed.
+
+Scaling does not trigger a rollout. An autoscaler moving your replica count around
+never restarts your Pods.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  annotations:
+    kubernetes.io/change-cause: "web 2.1"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  strategy:
+    type: RollingUpdate           # default
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0           # surge first, so capacity never dips
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+        app.kubernetes.io/version: "2.1"
+    spec:
+      containers:
+        - name: web
+          image: registry.example.com/web:2.1
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+```
+
+The `readinessProbe` is not decoration. Without it `Ready` is trivially true the
+moment the container starts, which means `minReadySeconds` measures nothing,
+`maxUnavailable` protects nothing, and the Service in the next section will route
+traffic to processes that are not listening yet. A rolling update without a
+readiness probe is a rolling outage with extra steps.
+
+### maxSurge and maxUnavailable
+
+Both default to **25%**, and they round in opposite directions. `maxSurge` rounds
+**up**, `maxUnavailable` rounds **down**. At 3 replicas with the defaults, that
+gives you `maxSurge: 1` and `maxUnavailable: 0`.
+
+They cannot both be zero, which makes sense: one of them has to give for anything to
+move.
+
+### The commands
+
+```bash
+kubectl rollout status deployment/web      # block until the rollout finishes
+kubectl rollout history deployment/web     # list revisions
+kubectl rollout undo deployment/web        # roll back one revision
+kubectl rollout pause deployment/web       # batch several edits into one rollout
+kubectl rollout resume deployment/web
+kubectl rollout restart deployment/web     # re-roll with no spec change
+```
+
+`kubectl rollout restart` is not a special API call. It stamps a
+`kubectl.kubernetes.io/restartedAt` annotation into the Pod template, which changes
+the template, which triggers a rollout by the ordinary rule. It also consumes a
+revision.
+
+Two things about rollback. Revisions are just the old ReplicaSets, retained per
+`revisionHistoryLimit` (default **10**), which is why setting that to 0 silently
+destroys your ability to roll back. And `kubectl rollout undo` restores the **Pod
+template only**, not the replica count or the strategy. That is deliberate, so a
+rollback composes with whatever scaling happened since.
+
+### Progress deadline
+
+`progressDeadlineSeconds` defaults to **600**. When it is exceeded, the Deployment
+gets a condition saying so.
+
+That is all it does. **Kubernetes does not roll back automatically.** It reports the
+condition and keeps retrying. If you want automatic rollback you build it in your
+delivery pipeline.
+
+One more trap: a *completed* rollout also reports `Progressing=True`, with the
+reason `NewReplicaSetAvailable`. If you are scripting against Deployment conditions,
+read the reason, not the status.
+
+## Layer 4: the Service
+
+**The problem it solves:** everything above deliberately treats Pods as disposable,
+so their IPs are constantly changing. Nothing has a stable address.
+
+A Service is a stable virtual IP and DNS name in front of a set of Pods selected by
+label.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: http    # the container port named "http", which is 8080
+```
+
+Two deliberate choices there. `type` is omitted, so this is a ClusterIP, the
+default. And the selector is a **subset** of the Pod's labels:
+`app.kubernetes.io/version` is missing on purpose, so shipping a new version does
+not require touching the Service.
+
+### The four types
+
+| Type | What it gives you |
+|---|---|
+| `ClusterIP` | The default. A virtual IP reachable only inside the cluster |
+| `NodePort` | A ClusterIP, plus a port on every node in the range 30000-32767 |
+| `LoadBalancer` | A NodePort, plus an external load balancer provisioned by the cloud controller manager |
+| `ExternalName` | No proxying at all. Returns a CNAME to an external DNS name |
+
+The first three stack: each builds on the one above it. `ExternalName` is the odd
+one out and does no packet handling whatsoever.
+
+### There is no proxy in the path
+
+This is where the architecture post pays off. A Service is not a process sitting in
+front of your Pods. In the default iptables mode, and in nftables mode, kube-proxy
+is a **control plane agent that programs kernel packet rules**. The kernel does the
+forwarding.
+
+The consequences are worth stating:
+
+- The ClusterIP is virtual. No host answers it, and it exists only as a packet-rewriting rule. As the docs put it, Service IPs are not actually answered by a single host.
+- Killing kube-proxy does not break existing Service traffic. The rules stay in the kernel. What breaks is the cluster's ability to *update* them.
+- The default backend selection in iptables and nftables mode is **random**, not round-robin. Round-robin is an IPVS scheduler option, and IPVS is deprecated as of v1.35.
+
+### EndpointSlices are the join
+
+A Service stores no Pod names and no Pod IPs. It declares a label selector, and the
+**EndpointSlice controller** compiles the matching set into EndpointSlice objects,
+which is what kube-proxy actually reads.
+
+```yaml
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: web-abc12
+  labels:
+    kubernetes.io/service-name: web    # this is what links it to the Service
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 8080                          # the resolved targetPort
+endpoints:
+  - addresses:
+      - "10.1.2.3"
+    conditions:
+      ready: true
+    nodeName: node-1
+    zone: us-west2-a
+```
+
+Note the port is the resolved **8080**, not the Service's 80. And note there is no
+Pod name in the Service and no Service name in the Pod. The join happens here,
+computed by a controller, from labels.
+
+The older `Endpoints` API still exists but has been deprecated since v1.33. It
+cannot express dual-stack, and it truncates past 1000 endpoints. EndpointSlice is
+what the control plane creates now.
+
+### Headless Services
+
+Set `clusterIP: None` and you get no virtual IP and no kube-proxy rules. DNS returns
+the Pod IPs directly, as A or AAAA records:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-headless
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 8080
+```
+
+Use this when the client wants to know about individual backends: database
+clustering, peer discovery, or a gRPC client that does its own load balancing across
+a connection pool. Note that `None` is a special value and is not the same as
+leaving `clusterIP` unset.
+
+### External HTTP traffic
+
+`type: LoadBalancer` gives you one load balancer per Service, which gets expensive.
+For HTTP routing the answer used to be Ingress, but the Ingress API is now
+**frozen**: it remains GA and will not be removed, but it is no longer being
+developed. New work should look at the **Gateway API**, which ships as CRDs.
+
+## Labels and selectors: the connective tissue
+
+Every relationship in this post is a label match evaluated at runtime.
+
+The ReplicaSet finds its Pods by label selector. The Service finds its Pods by label
+selector. **They do this completely independently of each other.** The Service does
+not ask the Deployment which Pods to use, and the Deployment has no idea a Service
+exists. Both are separately matching against the same labels.
+
+Which means the failure mode is exactly what you would expect: a typo in the
+Service's selector produces a Service with no endpoints, and nothing anywhere
+reports an error. Both objects are individually valid. They just never meet.
+
+Two selector syntaxes exist:
+
+```yaml
+selector:
+  matchLabels:
+    app.kubernetes.io/name: web
+  matchExpressions:
+    - { key: environment, operator: NotIn, values: [dev] }
+    - { key: partition, operator: Exists }
+```
+
+All requirements are ANDed, and there is no OR. The set-based form works on
+Deployments, ReplicaSets, Jobs and DaemonSets, but **not** on a Service:
+`Service.spec.selector` is a flat map, so it is equality-only.
+
+One more thing the docs make explicit: labels do not provide uniqueness. That is
+names and UIDs. Many objects will carry the same labels, by design.
+
+## Owner references: the ownership chain
+
+Labels are how things find each other. Owner references are how deletion works.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-6d4cf56db6-7xk2p
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/version: "2.1"
+    pod-template-hash: 6d4cf56db6      # injected by the Deployment controller
+  ownerReferences:
+    - apiVersion: apps/v1
+      kind: ReplicaSet                 # the ReplicaSet, not the Deployment
+      name: web-6d4cf56db6
+      uid: 5a4f7c1e-2b3d-4e6f-9a01-c8d2e3f4a5b6
+      controller: true                 # exclusive: blocks adoption by anything else
+      blockOwnerDeletion: true
+```
+
+Three things to notice. The owner is the **ReplicaSet**, not the Deployment, which
+is the chain working as designed. `pod-template-hash` appears in the labels and in
+the owning ReplicaSet's selector. And nothing here mentions the Service, because the
+Service does not own this Pod and never will.
+
+Deleting a Deployment uses **background cascading deletion** by default, so the
+ReplicaSets and Pods go with it. If you want the Pods to survive, `--cascade=orphan`
+orphans the ReplicaSet, which carries on managing them. The old boolean
+`--cascade=false` form is dead; the values are `background`, `foreground` and
+`orphan`.
+
+## Defaults worth knowing
+
+| Field | Object | Default |
+|---|---|---|
+| `spec.replicas` | Deployment, ReplicaSet | 1 |
+| `spec.strategy.type` | Deployment | `RollingUpdate` |
+| `spec.strategy.rollingUpdate.maxSurge` | Deployment | 25%, rounds up |
+| `spec.strategy.rollingUpdate.maxUnavailable` | Deployment | 25%, rounds down |
+| `spec.revisionHistoryLimit` | Deployment | 10 |
+| `spec.progressDeadlineSeconds` | Deployment | 600 |
+| `spec.minReadySeconds` | Deployment, ReplicaSet | 0 |
+| `spec.restartPolicy` | Pod | `Always`, and the only value allowed in a Deployment template |
+| `spec.terminationGracePeriodSeconds` | Pod | 30 |
+| `spec.shareProcessNamespace` | Pod | false |
+| `spec.type` | Service | `ClusterIP` |
+| `spec.ports[*].protocol` | Service | `TCP` |
+| `spec.ports[*].targetPort` | Service | same as `port` |
+| `spec.sessionAffinity` | Service | `None` |
+| NodePort range | Service | 30000-32767 |
+
+## Common misconceptions
+
+1. **"A Pod is a container."** It is a group of one or more containers sharing network and storage. One-container Pods are the common case, but the Pod is the unit of scheduling and the API.
+2. **"Deployments create Pods."** They create ReplicaSets. The Pod's ownerReference points at the ReplicaSet.
+3. **"Scaling triggers a rollout."** Only a change to `.spec.template` does. Autoscaling never restarts your Pods.
+4. **"Phase `Running` means healthy."** It includes restarting. Read the `Ready` condition.
+5. **"A ReplicaSet only manages Pods it created."** It adopts any Pod matching its selector that has no controller owner, whatever image that Pod is running.
+6. **"A Service load-balances through a proxy."** It is kernel packet rules programmed by kube-proxy. There is no extra hop.
+7. **"Services route to Pods by name or IP."** A Service names no Pod and stores no Pod IP. The join is by label, through EndpointSlices.
+8. **"`kubectl run` creates a Deployment."** It creates a Pod. `kubectl create deployment` is the one that makes a Deployment.
+9. **"`kubectl expose` creates an Ingress."** It creates a Service. No kubectl subcommand generates an Ingress.
+10. **"Editing a live Pod's image updates the Deployment."** The API does allow patching the image on a running Pod, but nothing propagates upward. The ReplicaSet counts Pods; it does not diff their spec against its template. Your edit survives exactly until that Pod is replaced.
+11. **"Kubernetes rolls back automatically when a rollout stalls."** It sets `ProgressDeadlineExceeded` and keeps retrying.
+12. **"You should use ReplicaSets directly."** The docs recommend Deployments, because a ReplicaSet cannot do a rolling update.
+
+## The one paragraph version
+
+A Pod is a group of containers sharing a network namespace and volumes, and it is
+disposable by design. A ReplicaSet keeps a count of Pods alive by adopting anything
+matching its selector, and it cannot upgrade them. A Deployment upgrades them by
+creating a second ReplicaSet and shifting replicas across, keeping the old one
+around as a revision. A Service gives that constantly changing set one virtual IP,
+resolved through EndpointSlices and implemented as kernel packet rules rather than a
+proxy. None of them reference each other by name. Labels do the matching, owner
+references do the cleanup.
+
+## References
+
+All official Kubernetes documentation.
+
+**Workload objects**
+
+- [Pods](https://kubernetes.io/docs/concepts/workloads/pods/)
+- [Pod Lifecycle](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)
+- [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
+- [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
+- [Workloads overview](https://kubernetes.io/docs/concepts/workloads/)
+- [Init Containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
+- [Sidecar Containers](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/)
+- [Container Lifecycle Hooks](https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/)
+
+**Services and networking**
+
+- [Service](https://kubernetes.io/docs/concepts/services-networking/service/)
+- [EndpointSlices](https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/)
+- [Virtual IPs and Service Proxies](https://kubernetes.io/docs/reference/networking/virtual-ips/)
+- [DNS for Services and Pods](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/)
+- [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
+- [Gateway API](https://kubernetes.io/docs/concepts/services-networking/gateway/)
+
+**How things connect**
+
+- [Labels and Selectors](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/)
+- [Owners and Dependents](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
+- [Garbage Collection](https://kubernetes.io/docs/concepts/architecture/garbage-collection/)
+- [Use Cascading Deletion in a Cluster](https://kubernetes.io/docs/tasks/administer-cluster/use-cascading-deletion/)
+
+**API reference**
+
+- [Pod v1 (core)](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/)
+- [ReplicaSet v1 (apps)](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/replica-set-v1/)
+- [Deployment v1 (apps)](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/deployment-v1/)
+- [kubectl rollout](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_rollout/)
